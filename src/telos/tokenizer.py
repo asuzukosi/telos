@@ -27,6 +27,7 @@ from typing import Iterable
 from tokenizers import Tokenizer, AddedToken
 from transformers import AutoTokenizer, PreTrainedTokenizerBase
 from telos.constants import TELOS_TOKEN_MAP, TELOS_OWNERS, DEFAULT_BASE_MODEL
+from telos.constants import FrameType, FrameOwner
 
 def _reserved_name(slot: int) -> str:
     return f"<|reserved_special_token_{slot}|>"
@@ -34,10 +35,10 @@ def _reserved_name(slot: int) -> str:
 
 @dataclass
 class TelosToken:
-    """Resolved Telos marker: surface form, underlying ID, owner."""
-    name: str
+    """resolved Telos frame type: name, underlying ID, owner."""
+    name: FrameType
     token_id: int
-    owner: str
+    owner: FrameOwner
 
 class TelosTokenizer:
     """wraps a llama-3.1 tokenizer and aliases telos frame markers to its
@@ -52,8 +53,8 @@ class TelosTokenizer:
     def __init__(self, base_tokenizer: PreTrainedTokenizerBase):
         self._tok = base_tokenizer
         self._telos_tokens: dict[str, TelosToken] = {}
-        self._encode_subs: list[tuple[str, str]] = []  # (telos_name, reserved_name)
-        self._decode_subs: list[tuple[str, str]] = []  # (reserved_name, telos_name)
+        self._encode_subs: list[tuple[FrameType, str]] = []  # (frame_type, reserved_name)
+        self._decode_subs: list[tuple[str, FrameType]] = []  # (reserved_name, frame_type)
         self._build_alias_table()
  
     @classmethod
@@ -82,8 +83,8 @@ class TelosTokenizer:
                 token_id=token_id,
                 owner=TELOS_OWNERS[telos_name],
             )
-            self._encode_subs.append((telos_name, reserved_name))
-            self._decode_subs.append((reserved_name, telos_name))
+            self._encode_subs.append((FrameType(telos_name), reserved_name))
+            self._decode_subs.append((reserved_name, FrameType(telos_name)))
  
     @property
     def hf(self) -> PreTrainedTokenizerBase:
@@ -95,9 +96,13 @@ class TelosTokenizer:
         return len(self._tok)
  
     def token(self, name: str) -> TelosToken:
-        if name not in self._telos_tokens:
-            raise KeyError(f"not a Telos marker: {name!r}")
-        return self._telos_tokens[name]
+        """get the TelosToken for a given frame type name."""
+        try:
+            return self._telos_tokens[FrameType(name)]
+        except KeyError:
+            raise KeyError(f"not a Telos frame type: {name!r}")
+        except ValueError:
+            raise KeyError(f"not a Telos frame type: {name!r}")
  
     def id_of(self, name: str) -> int:
         return self.token(name).token_id
@@ -109,57 +114,57 @@ class TelosTokenizer:
     @property
     def goal_id(self) -> int:
         """id of the <|goal|> start token, for use as a generation start."""
-        return self.id_of("<|goal|>")
+        return self.id_of(FrameType.GOAL)
     
     @property
     def mission_id(self) -> int:
         """id of the <|mission|> start token, for use as a generation start."""
-        return self.id_of("<|mission|>")
+        return self.id_of(FrameType.MISSION)
     
     @property
     def obs_id(self) -> int:
         """id of the <|obs|> start token, for use as a generation start."""
-        return self.id_of("<|obs|>")
+        return self.id_of(FrameType.OBS)
     
     @property
     def belief_id(self) -> int:
         """id of the <|belief|> start token, for use as a generation start."""
-        return self.id_of("<|belief|>")
+        return self.id_of(FrameType.BELIEF)
     
     @property
     def plan_id(self) -> int:
         """id of the <|plan|> start token, for use as a generation start."""
-        return self.id_of("<|plan|>")
+        return self.id_of(FrameType.PLAN)
     
     @property
     def think_id(self) -> int:
         """id of the <|think|> start token, for use as a generation start."""
-        return self.id_of("<|think|>")
+        return self.id_of(FrameType.THINK)
     
     @property
     def action_id(self) -> int:
         """id of the <|action|> start token, for use as a generation start."""
-        return self.id_of("<|action|>")
+        return self.id_of(FrameType.ACTION)
     
     @property
     def end_id(self) -> int:
         """id of the <|end|> stop token, for use as a generation stop."""
-        return self.id_of("<|end|>")
+        return self.id_of(FrameType.END)
 
     @property
     def result_id(self) -> int:
         """id of the <|result|> start token, for use as a generation start."""
-        return self.id_of("<|result|>")
+        return self.id_of(FrameType.RESULT)
     
     @property
     def feedback_id(self) -> int:
         """id of the <|feedback|> start token, for use as a generation start."""
-        return self.id_of("<|feedback|>")
+        return self.id_of(FrameType.FEEDBACK)
     
     @property
     def reward_id(self) -> int:
         """id of the <|reward|> start token, for use as a generation start."""
-        return self.id_of("<|reward|>")
+        return self.id_of(FrameType.REWARD)
 
  
     def encode(self, text: str) -> list[int]:
@@ -194,7 +199,7 @@ class TelosTokenizer:
         for telos_name, slot in TELOS_TOKEN_MAP:
             tok = self._telos_tokens[telos_name]
             lines.append(
-                f"  {telos_name:<14} -> reserved_special_token_{slot:<3} "
+                f"  {telos_name.value:<14} -> reserved_special_token_{slot:<3} "
                 f"id={tok.token_id:<7} owner={tok.owner}"
             )
         return "\n".join(lines)
