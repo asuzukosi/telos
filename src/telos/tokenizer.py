@@ -26,39 +26,11 @@ from dataclasses import dataclass
 from typing import Iterable
 from tokenizers import Tokenizer, AddedToken
 from transformers import AutoTokenizer, PreTrainedTokenizerBase
-
-TELOS_TOKEN_MAP: tuple[tuple[str, int], ...] = (
-    ("<|goal|>",     0),
-    ("<|mission|>",  1),
-    ("<|obs|>",      2),
-    ("<|belief|>",   3),
-    ("<|plan|>",     4),
-    ("<|think|>",    5),
-    ("<|action|>",   6),
-    ("<|end|>",      7),
-    ("<|result|>",   8),
-    ("<|feedback|>", 9),
-    ("<|reward|>",   10),
-)
-
-TELOS_OWNERS: dict[str, str] = {
-    "<|goal|>":     "runtime",
-    "<|mission|>":  "runtime",
-    "<|obs|>":      "runtime",
-    "<|belief|>":   "model",
-    "<|plan|>":     "model",
-    "<|think|>":    "model",
-    "<|action|>":   "model",
-    "<|end|>":      "model",
-    "<|result|>":   "runtime",
-    "<|feedback|>": "runtime",
-    "<|reward|>":   "runtime",
-}
+from telos.constants import TELOS_TOKEN_MAP, TELOS_OWNERS, DEFAULT_BASE_MODEL
 
 def _reserved_name(slot: int) -> str:
     return f"<|reserved_special_token_{slot}|>"
  
-DEFAULT_BASE_MODEL = "meta-llama/Llama-3.1-8B"
 
 @dataclass
 class TelosToken:
