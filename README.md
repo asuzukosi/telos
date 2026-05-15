@@ -60,12 +60,6 @@ pytest
 
 `pyproject.toml` sets `testpaths` and `pythonpath=["src"]`. Some tests load the Llama tokenizer or full model and **skip** if the hub is unreachable or **CUDA / torch** are missing (for example `tests/runtime/test_hf_generator.py` and the causal-LM case in `tests/test_llama_gpu_integration.py`).
 
-If your shell mixes in **ROS** Python paths (for example after `source /opt/ros/.../setup.bash`), old `pytest11` plugins can crash under Python 3.12. In that situation run:
-
-```bash
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest
-```
-
 ## What's in the box
  
 The Telos package separates the format SDK (what other people would
