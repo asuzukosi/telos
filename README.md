@@ -1,3 +1,5 @@
+# Telos: Agent Native Serialization Format for Language Agents
+
 A goal-native serialization format for language agents.
  
 Telos is a research project exploring an alternative to chat-completion
@@ -93,7 +95,21 @@ namespace tools {
 ## Design decisions
  
 - **Base model: Llama-3.1-8B-base.** Llama-3 has 250 documented reserved
-  special tokens; Qwen2.5 does not.
+  special tokens; Qwen2.5 does not. Telos claims eleven of these
+  reserved slots and aliases them to frame markers at the string level:
+  | Telos marker     | Reserved token                     | Token ID |
+  | ---------------- | ---------------------------------- | -------- |
+  | `<\|goal\|>`       | `<\|reserved_special_token_0\|>`     | 128002   |
+  | `<\|mission\|>`    | `<\|reserved_special_token_1\|>`     | 128003   |
+  | `<\|obs\|>`        | `<\|reserved_special_token_2\|>`     | 128005   |
+  | `<\|belief\|>`     | `<\|reserved_special_token_3\|>`     | 128011   |
+  | `<\|plan\|>`       | `<\|reserved_special_token_4\|>`     | 128012   |
+  | `<\|think\|>`      | `<\|reserved_special_token_5\|>`     | 128013   |
+  | `<\|action\|>`     | `<\|reserved_special_token_6\|>`     | 128014   |
+  | `<\|end\|>`        | `<\|reserved_special_token_7\|>`     | 128015   |
+  | `<\|result\|>`     | `<\|reserved_special_token_8\|>`     | 128016   |
+  | `<\|feedback\|>`   | `<\|reserved_special_token_9\|>`     | 128017   |
+  | `<\|reward\|>`     | `<\|reserved_special_token_10\|>`    | 128018   |
 - **No closing tokens.** Each frame extends until the next marker or
   `<|end|>`.
 - **`<|end|>` is a generation stop, not an envelope.** The model
@@ -117,7 +133,3 @@ namespace tools {
 - [ ] LoRA fine-tune of Llama-3.1-8B-base on the Telos format
 - [ ] ChatML+tools baseline fine-tune on matched data
 - [ ] Evaluation harness (BFCL subset, ToolBench subset, small SWE-bench-Lite subset, retry counting on failure-injected runs)
-## License
- 
-Llama-3.1 is governed by the Llama 3 Community License; using Telos
-with Llama-3.1-8B inherits that license's terms.
