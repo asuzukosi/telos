@@ -107,16 +107,31 @@ def main() -> None:
         eval_ds = eval_ds.select(range(min(args.limit_eval, len(eval_ds))))
 
     def _tok(ex):
-        messages = json.loads(ex["messages"])
-        text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
+        try:
+            messages = json.loads(ex["messages"])
+        except Exception:
+            return {"input_ids": [], "labels": [], "attention_mask": []}
+        if not isinstance(messages, list) or len(messages) == 0:
+            return {"input_ids": [], "labels": [], "attention_mask": []}
+        try:
+            text = tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=False
+            )
+        except Exception:
+            return {"input_ids": [], "labels": [], "attention_mask": []}
         ids = tokenizer(text, add_special_tokens=False)["input_ids"]
         labels = mask_assistant_only(ids, tokenizer)
         ids, labels = truncate(ids, labels, cfg.max_length)
+        if len(ids) == 0:
+            return {"input_ids": [], "labels": [], "attention_mask": []}
         attn = [1] * len(ids)
         return {"input_ids": ids, "labels": labels, "attention_mask": attn}
 
     train_tok = train_ds.map(_tok, remove_columns=train_ds.column_names)
+    train_tok = train_tok.filter(lambda x: len(x["input_ids"]) > 0)
+
     eval_tok = eval_ds.map(_tok, remove_columns=eval_ds.column_names)
+    eval_tok = eval_tok.filter(lambda x: len(x["input_ids"]) > 0)
 
     targs = make_training_args(cfg)
 
