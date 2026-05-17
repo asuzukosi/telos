@@ -25,18 +25,34 @@ calls.
   pip install -e .
   ```
 
-- **Development (pytest):**
+- **Development (pytest, Weights & Biases):**
 
   ```bash
   pip install -e ".[dev]"
   ```
 
-  Or mirror the same pins with `requirements.txt` (core + pytest only; see comments in that file for optional PyTorch / NumPy):
+  Or mirror the same pins with `requirements.txt` (core + dev tools in that file; see comments there for optional PyTorch / NumPy):
 
   ```bash
   pip install -r requirements.txt
   pip install -e .
   ```
+
+  **Weights & Biases:** authenticate once (stores credentials for later runs):
+
+  ```bash
+  wandb login
+  ```
+
+  In a script or notebook, initialize a run before logging (adjust `project` / `entity` / `name` as needed):
+
+  ```python
+  import wandb
+
+  wandb.init(project="your-project", entity="your-entity", name="optional-run-name")
+  ```
+
+  Use `WANDB_MODE=offline` for local-only logging without syncing to the hub.
 
 - **PyTorch + large-model scripts and GPU tests:** transformers alone does not install PyTorch. Use a build appropriate for your CPU or CUDA from [pytorch.org](https://pytorch.org/), or:
 
