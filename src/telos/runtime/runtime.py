@@ -3,13 +3,13 @@ from dataclasses import dataclass
 from typing import Optional, Callable
 from telos.constants import FrameType
 from telos.frames import Frame
-from telos.sdk import step, StepResult
+from telos.sdk import step
 from telos.trajectory import Trajectory
 from telos.runtime.tools import ToolRegistry, ToolError
 
 terminal_tools = {"answer", "fail"}
 
-Generator  = Callable[[list[int], int, int], list[int]]
+GenerateFn = Callable[[list[int], int, int], list[int]]
 
 @dataclass
 class RunResult:
@@ -39,7 +39,7 @@ def run(
     registry: ToolRegistry,
     *, 
     tokenizer,
-    generate: Generator,
+    generate: GenerateFn,
     max_iterations: int = 10,
     max_new_tokens: int = 512,
     strict: bool = True,

@@ -24,7 +24,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable, Union
 from transformers import AutoTokenizer, PreTrainedTokenizerBase
-from telos.constants import TELOS_TOKEN_MAP, TELOS_OWNERS, DEFAULT_BASE_MODEL
+from telos.constants import TELOS_TOKEN_MAP, TELOS_OWNERS, DEFAULT_BASE_MODEL, END_MARKER, END_MARKER_RESERVED_SLOT
 from telos.constants import FrameType, FrameOwner
 from telos.frames import render
 from telos.trajectory import FrameLike, Trajectory
@@ -35,8 +35,8 @@ def _reserved_name(slot: int) -> str:
 
 @dataclass
 class TelosToken:
-    """resolved Telos frame type: name, underlying ID, owner."""
-    name: FrameType
+    """resolved Telos marker: canonical name, underlying ID, owner."""
+    name: str
     token_id: int
     owner: FrameOwner
 
@@ -70,6 +70,7 @@ class TelosTokenizer:
     def _build_alias_table(self) -> None:
         """resolve each telos marker to a reserved token ID and record substitutions."""
         for telos_name, slot in TELOS_TOKEN_MAP:
+            marker = telos_name.value
             reserved_name = _reserved_name(slot)
             ids = self._tok.encode(reserved_name, add_special_tokens=False)
             if len(ids) != 1:
@@ -78,13 +79,27 @@ class TelosTokenizer:
                     f"(got {ids}); base tokenizer may not be Llama-3.1-compatible"
                 )
             token_id = ids[0]
-            self._telos_tokens[telos_name] = TelosToken(
-                name=telos_name,
+            self._telos_tokens[marker] = TelosToken(
+                name=marker,
                 token_id=token_id,
                 owner=TELOS_OWNERS[telos_name],
             )
-            self._encode_subs.append((FrameType(telos_name), reserved_name))
-            self._decode_subs.append((reserved_name, FrameType(telos_name)))
+            self._encode_subs.append((marker, reserved_name))
+            self._decode_subs.append((reserved_name, marker))
+        end_reserved = _reserved_name(END_MARKER_RESERVED_SLOT)
+        end_ids = self._tok.encode(end_reserved, add_special_tokens=False)
+        if len(end_ids) != 1:
+            raise RuntimeError(
+                f"reserved slot {END_MARKER_RESERVED_SLOT} for END_MARKER did not encode "
+                f"as a single token (got {end_ids})"
+            )
+        self._telos_tokens[END_MARKER] = TelosToken(
+            name=END_MARKER,
+            token_id=end_ids[0],
+            owner=FrameOwner.MODEL,
+        )
+        self._encode_subs.append((END_MARKER, end_reserved))
+        self._decode_subs.append((end_reserved, END_MARKER))
  
     @property
     def hf(self) -> PreTrainedTokenizerBase:
@@ -95,14 +110,13 @@ class TelosTokenizer:
     def vocab_size(self) -> int:
         return len(self._tok)
  
-    def token(self, name: str) -> TelosToken:
-        """get the TelosToken for a given frame type name."""
+    def token(self, name: str | FrameType) -> TelosToken:
+        """get the TelosToken for a marker string or FrameType."""
+        key = name.value if isinstance(name, FrameType) else str(name)
         try:
-            return self._telos_tokens[FrameType(name)]
+            return self._telos_tokens[key]
         except KeyError:
-            raise KeyError(f"not a Telos frame type: {name!r}")
-        except ValueError:
-            raise KeyError(f"not a Telos frame type: {name!r}")
+            raise KeyError(f"not a Telos marker: {name!r}")
  
     def id_of(self, name: str) -> int:
         return self.token(name).token_id
@@ -149,7 +163,7 @@ class TelosTokenizer:
     @property
     def end_id(self) -> int:
         """id of the <|end|> stop token, for use as a generation stop."""
-        return self.id_of(FrameType.END)
+        return self.id_of(END_MARKER)
 
     @property
     def result_id(self) -> int:
@@ -197,11 +211,16 @@ class TelosTokenizer:
     def describe(self) -> str:
         lines = ["Telos token aliases:"]
         for telos_name, slot in TELOS_TOKEN_MAP:
-            tok = self._telos_tokens[telos_name]
+            tok = self._telos_tokens[telos_name.value]
             lines.append(
                 f"  {telos_name.value:<14} -> reserved_special_token_{slot:<3} "
                 f"id={tok.token_id:<7} owner={tok.owner}"
             )
+        end_tok = self._telos_tokens[END_MARKER]
+        lines.append(
+            f"  {END_MARKER:<14} -> reserved_special_token_{END_MARKER_RESERVED_SLOT:<3} "
+            f"id={end_tok.token_id:<7} owner={end_tok.owner}"
+        )
         return "\n".join(lines)
 
     def apply_trajectory_template(

@@ -12,7 +12,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Callable, Optional, Iterable, Union
 from telos.frames import Frame, parse, render
-from telos.constants import FrameType
+from telos.constants import FrameType, END_MARKER
 from telos.trajectory import Trajectory, FrameLike
 
 
@@ -66,7 +66,7 @@ def _render_tool_schema(tools: list[dict[str, Any]]) -> str:
     lines.append("}")
     return "\n".join(lines)
 
-Generator  = Callable[[list[int], int, int], list[int]]
+GenerateFn = Callable[[list[int], int, int], list[int]]
 
 @dataclass
 class StepResult:
@@ -98,7 +98,7 @@ def step(
     tools: Optional[list[dict]] = None,
     *,
     tokenizer,
-    generate: Generator,
+    generate: GenerateFn,
     max_new_tokens: int = 512,
     strict: bool = True,
 ) -> StepResult:
@@ -119,7 +119,7 @@ def step(
 
     # determine stop reason.
     if new_ids and new_ids[-1] == tokenizer.end_id:
-        stopped_on = "end"
+        stopped_on = END_MARKER
     elif len(new_ids) >= max_new_tokens:
         stopped_on = "max_tokens"
     else:

@@ -1,6 +1,13 @@
 """
-frame definitions, paraser and render for the telos wire format
-a talos trajectory is a sequence of frames. each frams opens with one of the 11 talos marker tokens and enxtends until the next marker token or end-of-string. there are no closing tokens
+frame definitions, parser and render for the telos wire format.
+
+a trajectory is a sequence of frames. each frame opens with one of the 10 telos
+marker tokens and extends until the next marker or end-of-string.
+
+serialization for the model: render() inserts the string END_MARKER ("<|end|>")
+after the last model-owned frame before a runtime-owned frame (and after the
+final frame if it is model-owned). that marker is not a separate Frame — parse()
+skips it and never returns an end frame.
 """
 from __future__ import annotations
 import json
@@ -8,14 +15,13 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Optional
 
-from telos.constants import TELOS_OWNERS, TELOS_TOKEN_MAP, FrameType, FrameOwner
+from telos.constants import TELOS_OWNERS, TELOS_TOKEN_MAP, FrameType, FrameOwner, END_MARKER
 from telos.utils import format_number
 
 class PayloadKind(Enum):
     PROSE = "prose"
     JSON = "json"
     NUMBER = "number"
-    EMPTY = "empty"
 
 # per-type payload-kind classification.
 TELOS_PAYLOAD_KIND: dict[str, PayloadKind] = {
@@ -26,14 +32,13 @@ TELOS_PAYLOAD_KIND: dict[str, PayloadKind] = {
     "<|plan|>":     PayloadKind.PROSE,
     "<|think|>":    PayloadKind.PROSE,
     "<|action|>":   PayloadKind.JSON,
-    "<|end|>":      PayloadKind.EMPTY,
     "<|result|>":   PayloadKind.JSON,
     "<|feedback|>": PayloadKind.PROSE,
     "<|reward|>":   PayloadKind.NUMBER,
 }
  
 # set of all known markers, for fast membership tests in the parser.
-TELOS_MARKERS: tuple[str, ...] = tuple(name for name, _ in TELOS_TOKEN_MAP)
+TELOS_MARKERS: tuple[str, ...] = tuple(name for name, _ in TELOS_TOKEN_MAP) + (END_MARKER,)
 _MARKER_SET: frozenset[str] = frozenset(TELOS_MARKERS)
 
 @dataclass
@@ -72,7 +77,6 @@ def action(payload: dict) -> Frame:  return Frame(FrameType.ACTION, payload)
 def result(payload: dict) -> Frame:  return Frame(FrameType.RESULT, payload)
 def feedback(text: str) -> Frame:    return Frame(FrameType.FEEDBACK, text)
 def reward(value: float) -> Frame:   return Frame(FrameType.REWARD, float(value))
-def end() -> Frame:                  return Frame(FrameType.END, None)
 
 
 class TelosParseError(ValueError):
@@ -86,8 +90,6 @@ class TelosOwnershipError(TelosParseError):
 
 def _render_payload(frame: Frame) -> str:
     kind = frame.kind
-    if kind == PayloadKind.EMPTY:
-        return ""
     if kind == PayloadKind.PROSE:
         return "" if frame.content is None else str(frame.content)
     if kind == PayloadKind.JSON:
@@ -103,38 +105,48 @@ def render_frame(frame: Frame) -> str:
     return f"{frame.type.value}{_render_payload(frame)}"
 
 def render(frames: list[Frame], *, separator: str = "\n") -> str:
-    """render a list of frames to a telos-formatted string."""
+    """render frames to wire text for the model. appends END_MARKER between model
+    and runtime segments; END_MARKER is not a Frame and is ignored by parse().
+    """
     parts: list[str] = []
+    n = len(frames)
     for i, f in enumerate(frames):
-        rendered = render_frame(f)
-        if i> 0 and separator and not parts[-1].endswith(separator): # add separator between frames, but not after the last frame, and not if previous frame ended with a separator
+        if i > 0 and separator and not parts[-1].endswith("\n"):
             parts.append(separator)
-        parts.append(rendered)
+        parts.append(render_frame(f))
+        # emit END_MARKER at any model->runtime boundary, or at the
+        # final frame if it is model-owned.
+        is_last = (i == n - 1)
+        next_is_runtime = (not is_last) and (TELOS_OWNERS[frames[i + 1].type] == FrameOwner.RUNTIME)
+        if f.owner == FrameOwner.MODEL and (is_last or next_is_runtime):
+            if separator and not parts[-1].endswith("\n"):
+                parts.append(separator)
+            parts.append(END_MARKER)
     return "".join(parts)
 
-_MARKER_TO_TYPE: dict[str, FrameType] = {ft.value: ft for ft, _ in TELOS_TOKEN_MAP}
+_MARKER_TO_TYPE: dict[str, FrameType] = {
+    marker: FrameType(marker) for marker, _ in TELOS_TOKEN_MAP
+}
 
-def _find_next_marker(text: str, start: int) -> tuple[int, Optional[FrameType]]:
-    """return (index, frame_type) for the next marker at or after start.
+
+def _find_next_marker(text: str, start: int) -> tuple[int, Optional[str]]:
+    """return (index, marker string) for the next marker at or after start.
     if no marker is found, return (len(text), None).
     """
-    next_idx = len(text)
-    next_type: Optional[FrameType] = None
-    for marker, ft in _MARKER_TO_TYPE.items():
+    best_idx = len(text)
+    best_marker: Optional[str] = None
+    for marker in TELOS_MARKERS:
         idx = text.find(marker, start)
         if idx == -1:
             continue
-        if idx < next_idx:
-            next_idx = idx
-            next_type = ft
-    return next_idx, next_type
+        if idx < best_idx:
+            best_idx = idx
+            best_marker = marker
+    return best_idx, best_marker
 
 def _parse_payload(ft: FrameType, body: str) -> tuple[Any, Optional[str]]:
     """parse the payload of a frame. return (content, error_or_None)."""
     kind = TELOS_PAYLOAD_KIND[ft]
-
-    if kind == PayloadKind.EMPTY:
-        return None, None
 
     if kind == PayloadKind.PROSE:
         return body.rstrip(), None
@@ -160,12 +172,13 @@ def _parse_payload(ft: FrameType, body: str) -> tuple[Any, Optional[str]]:
     return None, f"unknown payload kind: {kind}"
 
 def parse(text: str, *, strict: bool = False) -> list[Frame]:
-    """parse a telos wire-format string into a list of frames.
- 
-    frames are identified by their opening markers. Each frame extends
-    from its marker until the next marker or end-of-string. whitespace
-    between frames is discarded; whitespace inside prose frames is
-    preserved (except trailing whitespace before the next marker).
+    """parse wire text into Frames. END_MARKER is only a boundary token: it ends
+    the current payload search and does not produce a Frame.
+
+    frames are identified by their opening markers. Each frame extends from its
+    marker until the next marker or end-of-string. whitespace between frames is
+    discarded; whitespace inside prose frames is preserved (except trailing
+    whitespace before the next marker).
 
     args:
       text:   the wire-format string.
@@ -182,24 +195,29 @@ def parse(text: str, *, strict: bool = False) -> list[Frame]:
     if idx >= n:
         return frames
  
-    cur_marker_idx, cur_type = _find_next_marker(text, idx)
-    if cur_type is None or cur_marker_idx != idx:
+    cur_marker_idx, cur_marker = _find_next_marker(text, idx)
+    if cur_marker is None or cur_marker_idx != idx:
         preview = text[idx : min(idx + 40, n)].replace("\n", "\\n")
         raise TelosParseError(
             f"expected frame marker at offset {idx}, got: {preview!r}"
         )
-    while cur_type is not None:
-        if strict and TELOS_OWNERS[cur_type] == "runtime":
+    while cur_marker is not None:
+        # END_MARKER is a block boundary - skip it, advance to next
+        if cur_marker == END_MARKER:
+            body_start = cur_marker_idx + len(END_MARKER)
+            cur_marker_idx, cur_marker = _find_next_marker(text, body_start)
+            continue
+        cur_type = _MARKER_TO_TYPE[cur_marker]
+        if strict and TELOS_OWNERS[cur_type] == FrameOwner.RUNTIME:
             raise TelosOwnershipError(
-                f"runtime-owned marker {cur_type.value!r} found in model output"
+                f"runtime-owned marker {cur_marker!r} found in model output"
             )
-        body_start = cur_marker_idx + len(cur_type.value)
-        next_marker_idx, next_type = _find_next_marker(text, body_start)
+        body_start = cur_marker_idx + len(cur_marker)
+        next_marker_idx, next_marker = _find_next_marker(text, body_start)
         raw_body = text[body_start:next_marker_idx]
         content, error = _parse_payload(cur_type, raw_body)
         frames.append(Frame(type=cur_type, content=content, raw=raw_body, error=error))
-        cur_marker_idx, cur_type = next_marker_idx, next_type
- 
+        cur_marker_idx, cur_marker = next_marker_idx, next_marker
     return frames
 
 

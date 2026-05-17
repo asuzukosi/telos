@@ -1,9 +1,14 @@
 """tests for telos.trajectory."""
 import pytest
- 
+
 from telos.constants import FrameType
-from telos.frames import Frame, action, belief, end, goal, mission
+from telos.frames import Frame, action, goal, mission
 from telos.trajectory import Trajectory
+
+def test_rejects_end_frame_dict():
+    with pytest.raises(ValueError, match="not a stored frame"):
+        Trajectory([{"type": "end", "content": None}])
+
 
 def test_empty_trajectory():
     t = Trajectory()
@@ -77,16 +82,15 @@ def test_round_trip_dict_to_dict():
     original = [
         {"type": "goal", "content": "g"},
         {"type": "action", "content": {"tool": "x"}},
-        {"type": "end", "content": None},
     ]
     t = Trajectory(original)
     assert t.to_dict() == original
 
 def test_len_and_iteration():
-    t = Trajectory([goal("g"), mission("m"), end()])
-    assert len(t) == 3
+    t = Trajectory([goal("g"), mission("m")])
+    assert len(t) == 2
     types = [f.type for f in t]
-    assert types == [FrameType.GOAL, FrameType.MISSION, FrameType.END]
+    assert types == [FrameType.GOAL, FrameType.MISSION]
  
  
 def test_indexing_returns_frame():
@@ -96,7 +100,7 @@ def test_indexing_returns_frame():
  
  
 def test_slice_returns_trajectory():
-    t = Trajectory([goal("g"), mission("m"), action({"tool": "x"}), end()])
+    t = Trajectory([goal("g"), mission("m"), action({"tool": "x"})])
     sub = t[1:3]
     assert isinstance(sub, Trajectory)
     assert len(sub) == 2
@@ -152,8 +156,8 @@ def test_add_trajectory_and_dict():
 
 def test_add_trajectory_and_list():
     t = Trajectory([goal("g")])
-    new = t + [mission("m"), end()]
-    assert len(new) == 3
+    new = t + [mission("m")]
+    assert len(new) == 2
 
 def test_radd_frame_plus_trajectory():
     """Frame + Trajectory should also work."""
@@ -169,8 +173,8 @@ def test_iadd_in_place():
 
 def test_iadd_with_trajectory():
     t = Trajectory([goal("g")])
-    t += Trajectory([mission("m"), end()])
-    assert len(t) == 3
+    t += Trajectory([mission("m")])
+    assert len(t) == 2
 
 def test_equality():
     a = Trajectory([goal("g"), mission("m")])

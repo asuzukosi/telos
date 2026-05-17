@@ -6,7 +6,16 @@ these tests require access to the gated llama-3.1 8b base model on hugginface. i
 
 import pytest
 
-from telos.constants import DEFAULT_BASE_MODEL, FrameOwner, FrameType, TELOS_OWNERS, TELOS_TOKEN_MAP
+from telos.constants import (
+    DEFAULT_BASE_MODEL,
+    END_MARKER,
+    END_MARKER_RESERVED_SLOT,
+    FrameOwner,
+    FrameType,
+    TELOS_OWNERS,
+    TELOS_TOKEN_MAP,
+)
+
 
 @pytest.fixture(scope="module")
 def tokenizer():
@@ -23,25 +32,17 @@ def tokenizer():
         pytest.skip(f"failed to load tokenizer for {DEFAULT_BASE_MODEL}: {e}")
 
 
-def test_token_map_has_11_entries():
-    """
-    test that the token map has 11 entries.
-    """
-    assert len(TELOS_TOKEN_MAP) == 11
+def test_token_map_has_ten_frame_entries():
+    assert len(TELOS_TOKEN_MAP) == 10
+
 
 def test_token_map_entries_are_unique():
-    """
-    test that the token map entries are unique.
-    """
     slots = [slot for _, slot in TELOS_TOKEN_MAP]
     assert len(slots) == len(set(slots))
-
-def test_token_map_slots_are_contigous_from_0():
-    """
-    test that the token map slots are contiguous from 0.
-    """
-    slots = [slot for _, slot in TELOS_TOKEN_MAP]
-    assert slots == list(range(len(slots)))
+    slots = sorted(slot for _, slot in TELOS_TOKEN_MAP)
+    assert slots == [0, 1, 2, 3, 4, 5, 6, 8, 9, 10]
+    assert END_MARKER_RESERVED_SLOT == 7
+    assert END_MARKER_RESERVED_SLOT not in slots
 
 def test_owner_table_covers_all_frame_types():
     """
@@ -56,10 +57,14 @@ def test_default_base_model_is_llama31_8b():
 
 
 def test_apply_trajectory_template_string_matches_render(tokenizer):
-    from telos.frames import end, goal, mission, render
+    from telos.frames import action, goal, mission, render
     from telos.trajectory import Trajectory
 
-    frames = [goal("hello"), mission("task"), end()]
+    frames = [
+        goal("hello"),
+        mission("task"),
+        action({"tool": "answer", "text": "ok"}),
+    ]
     tr = Trajectory(frames)
     assert tokenizer.apply_trajectory_template(tr, tokenize=False) == render(frames)
 
@@ -67,27 +72,37 @@ def test_apply_trajectory_template_string_matches_render(tokenizer):
 def test_apply_trajectory_template_accepts_frame_dicts(tokenizer):
     from telos.trajectory import Trajectory
 
-    tr = Trajectory([{"type": "goal", "content": "x"}, {"type": "end", "content": None}])
+    tr = Trajectory([
+        {"type": "goal", "content": "x"},
+        {"type": "action", "content": {"tool": "answer", "text": "y"}},
+    ])
     wire = tokenizer.apply_trajectory_template(tr, tokenize=False)
     assert "<|goal|>x" in wire
-    assert "<|end|>" in wire
+    assert END_MARKER in wire
 
 
 def test_apply_trajectory_template_tokenize_matches_encode(tokenizer):
-    from telos.frames import end, goal, mission, render
+    from telos.frames import action, goal, mission, render
     from telos.trajectory import Trajectory
 
-    tr = Trajectory([goal("a"), mission("b"), end()])
+    tr = Trajectory([
+        goal("a"),
+        mission("b"),
+        action({"tool": "answer", "text": "z"}),
+    ])
     wire = render(tr.to_frames())
     assert tokenizer.apply_trajectory_template(tr, tokenize=True) == tokenizer.encode(wire)
 
 
 def test_apply_trajectory_template_return_tensors_pt(tokenizer):
     torch = pytest.importorskip("torch")
-    from telos.frames import end, goal
+    from telos.frames import action, goal
     from telos.trajectory import Trajectory
 
-    tr = Trajectory([goal("hi"), end()])
+    tr = Trajectory([
+        goal("hi"),
+        action({"tool": "answer", "text": "ok"}),
+    ])
     wire = tokenizer.apply_trajectory_template(tr, tokenize=False)
     t = tokenizer.apply_trajectory_template(
         tr,
@@ -102,21 +117,30 @@ def test_each_marker_encodes_to_single_token(tokenizer):
     for telos_name, _slot in TELOS_TOKEN_MAP:
         ids = tokenizer.encode(telos_name.value)
         assert len(ids) == 1, f"expected single token for {telos_name.value}, got {ids}"
+    ids = tokenizer.encode(END_MARKER)
+    assert len(ids) == 1, f"expected single token for {END_MARKER}, got {ids}"
+
 
 def test_marker_ids_match_id_of_lookup(tokenizer):
     for telos_name, _slot in TELOS_TOKEN_MAP:
         ids = tokenizer.encode(telos_name.value)
-        assert ids[0] == tokenizer.id_of(telos_name.value), f"expected token id {tokenizer.id_of(telos_name.value)} for {telos_name.value}, got {ids[0]}"
+        assert ids[0] == tokenizer.id_of(telos_name.value), (
+            f"expected token id {tokenizer.id_of(telos_name.value)} for {telos_name.value}, got {ids[0]}"
+        )
+    ids = tokenizer.encode(END_MARKER)
+    assert ids[0] == tokenizer.id_of(END_MARKER)
 
 
 def test_end_id_property_matches_explicit_lookup(tokenizer):
-    assert tokenizer.end_id == tokenizer.id_of(FrameType.END.value)
+    assert tokenizer.end_id == tokenizer.id_of(END_MARKER)
+
 
 def test_telos_token_ids_returns_all_eleven(tokenizer):
     ids = tokenizer.telos_token_ids()
     assert len(ids) == 11
     for telos_name, _slot in TELOS_TOKEN_MAP:
         assert tokenizer.id_of(telos_name) in ids
+    assert tokenizer.id_of(END_MARKER) in ids
  
  
 def test_unknown_marker_raises(tokenizer):
@@ -161,7 +185,8 @@ def test_underlying_tokenizer_is_unmodified(tokenizer):
 def test_describe_lists_all_markers(tokenizer):
     text = tokenizer.describe()
     for telos_name, _slot in TELOS_TOKEN_MAP:
-        assert telos_name in text
+        assert telos_name.value in text
+    assert END_MARKER in text
  
  
 def test_token_metadata_has_correct_owner(tokenizer):

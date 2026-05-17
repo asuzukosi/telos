@@ -2,8 +2,8 @@
 trajectory:: an ordered, mutable container of telos frames
 """
 from __future__ import annotations
-from typing import Any, Iterable, Iterator, Union
-from telos.constants import FrameType
+from typing import Any, Iterable, Union
+from telos.constants import FrameType, END_MARKER
 from telos.frames import Frame
 
 FrameLike = Union[Frame, dict[str, Any]]
@@ -15,6 +15,10 @@ def _frame_from_dict(d: dict[str, Any]) -> Frame:
     type_str = d["type"]
     if not type_str.startswith("<|"):
         type_str = "<|" + type_str + "|>"
+    if type_str == END_MARKER:
+        raise ValueError(
+            f"{END_MARKER} is not a stored frame; it is injected on render and stripped on parse"
+        )
     try:
         ft = FrameType(type_str)
     except ValueError as e:

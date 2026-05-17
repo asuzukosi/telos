@@ -45,3 +45,6 @@ coverage.xml
 *.swp
 *.swo
 *~
+
+telos-agent-data
+data

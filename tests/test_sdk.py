@@ -1,10 +1,7 @@
 """Tests for telos.sdk."""
- 
 import json
- 
-import pytest
- 
 from telos.sdk import StepResult, _render_tool_schema, step
+from telos.constants import END_MARKER
 from telos.trajectory import Trajectory
 
 class FakeTokenizer:
@@ -161,10 +158,10 @@ def test_step_appends_model_frames():
     )
     result = step(trajectory, None, tokenizer=FakeTokenizer(), generate=gen)
     assert isinstance(result, StepResult)
-    assert result.stopped_on == "end"
+    assert result.stopped_on == END_MARKER
     assert isinstance(result.new_frames, Trajectory)
     types_short = [f["type"] for f in result.new_frames.to_dict()]
-    assert types_short == ["belief", "action", "end"]
+    assert types_short == ["belief", "action"]
  
  
 def test_step_extended_trajectory_starts_with_input():

@@ -1,153 +1,170 @@
 from __future__ import annotations
- 
-from dataclasses import dataclass
-from typing import Optional
- 
-from telos.constants import FrameType, FrameOwner
+
+from dataclasses import dataclass, field
+from typing import Callable, Optional
+from telos.constants import TERMINAL_TOOLS, FrameType, FrameOwner
 from telos.frames import Frame
- 
- 
+
+
 @dataclass
 class Violation:
     """a single trajectory-level rule violation."""
     rule: str
     frame_index: int
     message: str
- 
+
     def __str__(self) -> str:
         return f"[{self.rule}] frame {self.frame_index}: {self.message}"
- 
- 
-def validate(frames: list[Frame]) -> list[Violation]:
-    """check a trajectory against the telos wire format sequence rules.
-    returns a list of violations. empty list means the trajectory is structurally valid. the caller decides how to react.
-    """
-    violations: list[Violation] = []
- 
-    if not frames:
-        return violations
 
-    # rule 0: <|goal|> must be the very first frame.
+
+def _action_tool(f: Frame) -> Optional[str]:
+    if f.type is not FrameType.ACTION:
+        return None
+    return (f.content or {}).get("tool")
+
+
+def _action_is_terminal(f: Frame) -> bool:
+    t = _action_tool(f)
+    return t is not None and t in TERMINAL_TOOLS
+
+
+# ---- structural rules (pure, frame-list scans) ----
+
+def _violations_goal_must_be_first(frames: list[Frame]) -> list[Violation]:
     if frames[0].type is not FrameType.GOAL:
-        violations.append(Violation(
+        return [Violation(
             rule="missing_goal",
             frame_index=0,
             message=f"trajectory must begin with <|goal|>, got {frames[0].type.value}",
-        ))
- 
- 
-    # rule 1: opening prelude
-    # find the first model-owned frame. every frame before it must be one of goal/mission/obs.
-    allowed_prelude = {FrameType.GOAL, FrameType.MISSION, FrameType.OBS}
+        )]
+    return []
+
+
+def _violations_opening_prelude(frames: list[Frame]) -> list[Violation]:
+    """before the first model-owned frame, only goal / mission / obs are allowed."""
+    allowed = {FrameType.GOAL, FrameType.MISSION, FrameType.OBS}
+    out: list[Violation] = []
     for i, f in enumerate(frames):
         if f.owner == FrameOwner.MODEL:
             break
-        if f.type not in allowed_prelude:
-            violations.append(Violation(
+        if f.type not in allowed:
+            out.append(Violation(
                 rule="opening_prelude",
                 frame_index=i,
-                message=f"unexpected {f.type.value} before any model frame "
-                        f"(expected goal/mission/obs)",
+                message=(
+                    f"unexpected {f.type.value} before any model frame "
+                    f"(expected goal/mission/obs)"
+                ),
             ))
-    
-    # walk the trajectory checking action/result balance.
-    pending_actions = 0                # actions emitted but not yet resulted
+    return out
+
+@dataclass
+class _ActionResultWalk:
+    """tracks non-terminal <|action|> vs <|result|> pairing while scanning."""
+    frames: list[Frame]
+    pending_non_terminal: int = 0
     first_pending_action_idx: Optional[int] = None
-    saw_any_action = False            # whether any action has been seen
-    in_model_block = False            # whether we are in a model block
-    block_has_non_end_frame = False   # whether the current block has a model frame other than <|end|>
-    model_block_ended_with_end = False # whether the current model block ended with <|end|>
- 
-    for i, f in enumerate(frames):
+    saw_any_action: bool = False
+    in_model_block: bool = False
+    violations: list[Violation] = field(default_factory=list)
+
+    def _set_model_block(self, f: Frame) -> None:
         if f.owner == FrameOwner.MODEL:
-            if not in_model_block:
-                in_model_block = True
-                block_has_non_end_frame = False
-                model_block_ended_with_end = False
+            if not self.in_model_block:
+                self.in_model_block = True
         else:
-            if in_model_block:
-                if not model_block_ended_with_end:
-                    violations.append(Violation(
-                        rule="block_termination",
-                        frame_index=i - 1,
-                        message="model generation block did not end with <|end|>",
-                    ))
-                in_model_block = False
-                block_has_non_end_frame = False
-                model_block_ended_with_end = False
- 
-        # rule 3: the model may emit multiple actions in one block; the following runtime block must emit a result for each. a new action emitted while a previous action is still unresolved is only valid if we are still in the same model block.
-        if f.type is FrameType.ACTION:
-            if pending_actions > 0 and not in_model_block:
-                # an action arrived while previous batch is unresolved and we are not in a model block - structurally impossible (action is model-owned) but kept for safety.
-                violations.append(Violation(
-                    rule="orphan_action",
-                    frame_index=first_pending_action_idx or i,
-                    message="action emitted while previous batch unresolved",
-                ))
-            if pending_actions == 0:
-                first_pending_action_idx = i
-            pending_actions += 1
-            saw_any_action = True
- 
-        if f.type is FrameType.RESULT:
-            if pending_actions == 0:
-                violations.append(Violation(
-                    rule="orphan_result",
-                    frame_index=i,
-                    message="result with no preceding unresolved action",
-                ))
-            else:
-                pending_actions -= 1
-                if pending_actions == 0:
-                    first_pending_action_idx = None
- 
-        # rule 5: feedback/reward only after at least one action exists.
-        if f.type in (FrameType.FEEDBACK, FrameType.REWARD):
-            if not saw_any_action:
-                violations.append(Violation(
-                    rule="premature_runtime_frame",
-                    frame_index=i,
-                    message=f"{f.type.value} appears before any action",
-                ))
- 
-        # track whether the current model block contains any non-end frame.
-        if f.owner == FrameOwner.MODEL and f.type is not FrameType.END:
-            block_has_non_end_frame = True
- 
-        # track <|end|> as the close of the current model block.
-        if f.type is FrameType.END:
-            if not block_has_non_end_frame:
-                violations.append(Violation(
-                    rule="stray_end",
-                    frame_index=i,
-                    message="<|end|> with no preceding model frame in its block",
-                ))
-            else:
-                model_block_ended_with_end = True
- 
-    # handle the case where the trajectory ends inside an open model block.
-    if in_model_block and not model_block_ended_with_end:
-        violations.append(Violation(
-            rule="block_termination",
-            frame_index=len(frames) - 1,
-            message="trajectory ends inside an unterminated model block",
+            self.in_model_block = False
+
+    def _on_action(self, i: int, f: Frame) -> None:
+        if self.pending_non_terminal > 0 and not self.in_model_block:
+            self.violations.append(Violation(
+                rule="orphan_action",
+                frame_index=self.first_pending_action_idx or i,
+                message="non-terminal action emitted while previous batch unresolved",
+            ))
+        if _action_is_terminal(f):
+            self.saw_any_action = True
+            return
+        self.saw_any_action = True
+        if self.pending_non_terminal == 0:
+            self.first_pending_action_idx = i
+        self.pending_non_terminal += 1
+
+    def _on_result(self, i: int, f: Frame) -> None:
+        if self.pending_non_terminal > 0:
+            self.pending_non_terminal -= 1
+            if self.pending_non_terminal == 0:
+                self.first_pending_action_idx = None
+            return
+        prev = self.frames[i - 1] if i > 0 else None
+        if (
+            prev is not None
+            and prev.type is FrameType.ACTION
+            and _action_is_terminal(prev)
+        ):
+            return
+        self.violations.append(Violation(
+            rule="orphan_result",
+            frame_index=i,
+            message="result with no preceding unresolved non-terminal action",
         ))
- 
-    # trailing unresolved actions.
-    if pending_actions > 0:
-        violations.append(Violation(
-            rule="unresolved_action",
-            frame_index=first_pending_action_idx or (len(frames) - 1),
-            message=(
-                f"{pending_actions} action(s) without corresponding result(s) "
-                f"by end of trajectory"
-            ),
-        ))
- 
+
+    def _on_feedback_or_reward(self, i: int, f: Frame) -> None:
+        if not self.saw_any_action:
+            self.violations.append(Violation(
+                rule="premature_runtime_frame",
+                frame_index=i,
+                message=f"{f.type.value} appears before any action",
+            ))
+
+    def run(self) -> list[Violation]:
+        for i, f in enumerate(self.frames):
+            self._set_model_block(f)
+            if f.type is FrameType.ACTION:
+                self._on_action(i, f)
+            elif f.type is FrameType.RESULT:
+                self._on_result(i, f)
+            elif f.type in (FrameType.FEEDBACK, FrameType.REWARD):
+                self._on_feedback_or_reward(i, f)
+        if self.pending_non_terminal > 0:
+            self.violations.append(Violation(
+                rule="unresolved_action",
+                frame_index=self.first_pending_action_idx or (len(self.frames) - 1),
+                message=(
+                    f"{self.pending_non_terminal} non-terminal action(s) without "
+                    f"matching result(s) by end of trajectory"
+                ),
+            ))
+        return self.violations
+
+
+# extend validation by adding callables: (frames) -> list[Violation]
+StructuralRule = Callable[[list[Frame]], list[Violation]]
+
+STRUCTURAL_RULES: tuple[StructuralRule, ...] = (
+    _violations_goal_must_be_first,
+    _violations_opening_prelude,
+)
+
+
+def validate(frames: list[Frame]) -> list[Violation]:
+    """check a trajectory against telos sequence rules.
+
+    non-terminal actions each need a matching <|result|> before more non-terminal
+    work or end of trajectory. terminal actions (answer / fail) do not require a
+    following result; an optional <|result|> immediately after them is allowed.
+    """
+    if not frames:
+        return []
+
+    violations: list[Violation] = []
+    for rule in STRUCTURAL_RULES:
+        violations.extend(rule(frames))
+
+    violations.extend(_ActionResultWalk(frames).run())
     return violations
- 
+
+
 def is_valid(frames: list[Frame]) -> bool:
     """convenience: true iff validate returns no violations. used for testing."""
     return not validate(frames)
- 

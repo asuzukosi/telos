@@ -6,7 +6,7 @@ pure python, no external dependencies
 from enum import Enum
 
 class FrameType(str, Enum):
-    """The 11 Telos frame types. The value of each member is the
+    """The 10 Telos frame types. The value of each member is the
     canonical wire-format marker string for that frame type.
  
     Inheriting from ``str`` means FrameType.GOAL == "<|goal|>" is True,
@@ -20,7 +20,6 @@ class FrameType(str, Enum):
     PLAN     = "<|plan|>"
     THINK    = "<|think|>"
     ACTION   = "<|action|>"
-    END      = "<|end|>"
     RESULT   = "<|result|>"
     FEEDBACK = "<|feedback|>"
     REWARD   = "<|reward|>"
@@ -30,7 +29,7 @@ class FrameOwner(str, Enum):
     RUNTIME = "runtime"
     MODEL = "model"
 
-# token mapping: telos v1
+# token mapping: telos v1 (llama-3.1 reserved slots; slot 7 is <|end|>, see END_MARKER)
 TELOS_TOKEN_MAP: tuple[tuple[FrameType, int], ...] = (
     (FrameType.GOAL,     0),
     (FrameType.MISSION,  1),
@@ -39,12 +38,11 @@ TELOS_TOKEN_MAP: tuple[tuple[FrameType, int], ...] = (
     (FrameType.PLAN,     4),
     (FrameType.THINK,    5),
     (FrameType.ACTION,   6),
-    (FrameType.END,      7),
     (FrameType.RESULT,   8),
     (FrameType.FEEDBACK, 9),
     (FrameType.REWARD,   10),
 )
- 
+
 # ownership: which side of the loop is allowed to emit each marker.
 TELOS_OWNERS: dict[FrameType, FrameOwner] = {
     FrameType.GOAL:     FrameOwner.RUNTIME,
@@ -54,10 +52,18 @@ TELOS_OWNERS: dict[FrameType, FrameOwner] = {
     FrameType.PLAN:     FrameOwner.MODEL,
     FrameType.THINK:    FrameOwner.MODEL,
     FrameType.ACTION:   FrameOwner.MODEL,
-    FrameType.END:      FrameOwner.MODEL,
     FrameType.RESULT:   FrameOwner.RUNTIME,
     FrameType.FEEDBACK: FrameOwner.RUNTIME,
     FrameType.REWARD:   FrameOwner.RUNTIME,
 }
- 
+
+END_MARKER: str = "<|end|>"
+END_MARKER_RESERVED_SLOT: int = 7
+MODEL_FRAMES: frozenset = frozenset(
+    ft for ft, owner in TELOS_OWNERS.items() if owner == "model"
+)
+RUNTIME_FRAMES: frozenset = frozenset(
+    ft for ft, owner in TELOS_OWNERS.items() if owner == "runtime"
+)
+TERMINAL_TOOLS: frozenset = frozenset({"answer", "fail"})
 DEFAULT_BASE_MODEL: str = "meta-llama/Llama-3.1-8B"
