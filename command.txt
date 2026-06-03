@@ -1,1 +1,119 @@
-torchrun --standalone --nproc_per_node=2 -m scripts.training_scripts.train_telos_lora   --model-id kosiasuzu/telos-agent-llama-3.1-8b-init   --dataset kosiasuzu/telos-agent-trajectory-dataset   --output-dir outputs/telos-lora-full   --run-name telos-lora-full   --push-adapter   --push-merged   --adapter-repo-id kosiasuzu/telos-llama3.1-8b-lora-adapter   --merged-repo-id kosiasuzu/telos-llama3.1-8b-lora-merged
+# executable commands for the telos project
+# install first: pip install -e .
+# list commands: telos
+# per-command help: telos <command> --help
+
+
+# --- init telos embeddings ---
+# average seed-word embeddings into llama reserved slots for telos markers, then push to hub
+telos init-telos-embeddings \
+  --base-model meta-llama/Llama-3.1-8B \
+  --repo-id kosiasuzu/telos-agent-llama-3.1-8b-init
+
+
+# --- init chatml embeddings ---
+# mean-pool seed rows into chatml marker slots; uses instruct tokenizer vocab on base weights
+telos init-chatml-embeddings \
+  --base-model meta-llama/Llama-3.1-8B \
+  --instruct-tokenizer meta-llama/Llama-3.1-8B-Instruct \
+  --repo-id kosiasuzu/chatml-agent-llama-3.1-8b-init
+
+
+# --- data: clean and push trajectories ---
+# validate jsonl trajectories, dedupe by mission, stratified train/eval split, push to hf datasets
+telos data-clean-push \
+  --input data/generated.jsonl \
+  --repo-id kosiasuzu/telos-agent-trajectory-dataset
+
+# add chatml messages column to telos jsonl records
+telos data-telos-to-chatml \
+  --input data/trajectories.jsonl \
+  --output data/trajectories_chatml.jsonl
+
+# generate synthetic trajectories via openrouter (requires OPENROUTER_API_KEY in .env)
+telos data-synthetic-gen \
+  --target 20000 \
+  --workers 16 \
+  --out data/generated.jsonl
+
+
+# --- train telos lora (multi-gpu) ---
+# fine-tune a telos-format lora on the trajectory dataset; pushes adapter and merged weights when repo ids are set
+torchrun --standalone --nproc_per_node=2 -m telos.cli.commands.train_telos_lora \
+  --model-id kosiasuzu/telos-agent-llama-3.1-8b-init \
+  --dataset kosiasuzu/telos-agent-trajectory-dataset \
+  --output-dir outputs/telos-lora-full \
+  --run-name telos-lora-full \
+  --adapter-repo-id kosiasuzu/telos-llama3.1-8b-lora-adapter \
+  --merged-repo-id kosiasuzu/telos-llama3.1-8b-lora-merged
+
+# same telos training via the telos cli (single process)
+telos train-telos-lora \
+  --model-id kosiasuzu/telos-agent-llama-3.1-8b-init \
+  --dataset kosiasuzu/telos-agent-trajectory-dataset \
+  --output-dir outputs/telos-lora \
+  --run-name telos-lora \
+  --adapter-repo-id kosiasuzu/telos-llama3.1-8b-lora-adapter \
+  --merged-repo-id kosiasuzu/telos-llama3.1-8b-lora-merged
+
+
+# --- train chatml lora (multi-gpu) ---
+# fine-tune a chatml lora on the same dataset (uses messages column); default base is chatml-base-init
+torchrun --standalone --nproc_per_node=2 -m telos.cli.commands.train_chatml_lora \
+  --model-id kosiasuzu/chatml-agent-llama-3.1-8b-init \
+  --dataset kosiasuzu/telos-agent-trajectory-dataset \
+  --output-dir outputs/chatml-lora-full \
+  --run-name chatml-lora-full \
+  --adapter-repo-id kosiasuzu/chatml-llama3.1-8b-lora-adapter \
+  --merged-repo-id kosiasuzu/chatml-llama3.1-8b-lora-merged
+
+# same chatml training via the telos cli (single process)
+telos train-chatml-lora \
+  --model-id kosiasuzu/chatml-agent-llama-3.1-8b-init \
+  --dataset kosiasuzu/telos-agent-trajectory-dataset \
+  --output-dir outputs/chatml-lora \
+  --run-name chatml-lora \
+  --adapter-repo-id kosiasuzu/chatml-llama3.1-8b-lora-adapter \
+  --merged-repo-id kosiasuzu/chatml-llama3.1-8b-lora-merged
+
+
+# --- format validity eval: telos ---
+# generate telos completions on the eval split and score parse/structural validity; peft = base + adapter
+telos eval-format-validity \
+  --format telos \
+  --model kosiasuzu/telos-agent-llama-3.1-8b-init \
+  --adapter-mode peft \
+  --adapter-id kosiasuzu/telos-llama3.1-8b-lora-adapter \
+  --dataset kosiasuzu/telos-agent-trajectory-dataset \
+  --split eval \
+  --output results/telos_format_validity_peft.json
+
+# telos eval on a merged (fused) checkpoint; --model is the full checkpoint, no --adapter-id
+telos eval-format-validity \
+  --format telos \
+  --model kosiasuzu/telos-llama-3.1-8b-lora-merged \
+  --adapter-mode merged \
+  --dataset kosiasuzu/telos-agent-trajectory-dataset \
+  --split eval \
+  --output results/telos_format_validity_merged.json
+
+
+# --- format validity eval: chatml ---
+# same eval harness for chatml message format; peft = base + adapter
+telos eval-format-validity \
+  --format chatml \
+  --model kosiasuzu/chatml-agent-llama-3.1-8b-init \
+  --adapter-mode peft \
+  --adapter-id kosiasuzu/chatml-llama3.1-8b-lora-adapter \
+  --dataset kosiasuzu/telos-agent-trajectory-dataset \
+  --split eval \
+  --output results/chatml_format_validity_peft.json
+
+# chatml eval on a merged checkpoint
+telos eval-format-validity \
+  --format chatml \
+  --model kosiasuzu/chatml-llama-3.1-8b-lora-merged \
+  --adapter-mode merged \
+  --dataset kosiasuzu/telos-agent-trajectory-dataset \
+  --split eval \
+  --output results/chatml_format_validity_merged.json

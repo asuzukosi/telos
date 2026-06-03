@@ -1,27 +1,19 @@
-# parallel jsonl generation via openrouter (openai-compatible client)
+"""parallel synthetic telos trajectory jsonl generation via openrouter."""
+
+from __future__ import annotations
+
 import json
 import os
-import time
 import threading
+import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 
-from dotenv import load_dotenv
-from openai import OpenAI
+from telos.prompts.synthetic_data_generation import SYNTHETIC_DATA_GENERATION_PROMPT
 
-load_dotenv()
-
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-_PROMPT_PATH = _REPO_ROOT / "prompts" / "synthetic_data_generation.txt"
-
-TARGET = 20000
-BATCH = 20
-WORKERS = 16
-MAX_TOKENS = 16000
-MAX_RETRIES = 10
-BACKOFF_S = 1.5
-OUT_PATH = _REPO_ROOT / "data" / "generated.jsonl"
-MODEL = "qwen/qwen3.5-plus-20260420"
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_DEFAULT_OUT_PATH = _REPO_ROOT / "data" / "generated.jsonl"
+_DEFAULT_MODEL = "qwen/qwen3.5-plus-20260420"
 
 
 def count_jsonl_lines(path: Path) -> int:
@@ -46,7 +38,7 @@ def parse_trajectory_lines(text: str) -> list[str]:
 
 
 def fetch_batch(
-    client: OpenAI,
+    client,
     *,
     model: str,
     prompt: str,
@@ -106,16 +98,34 @@ def fetch_batch(
     return []
 
 
-def main() -> None:
-    print(
-        f"log: start target={TARGET} batch={BATCH} workers={WORKERS} "
-        f"max_tokens={MAX_TOKENS} model={MODEL} out={OUT_PATH}"
-    )
-    prompt = _PROMPT_PATH.read_text(encoding="utf-8")
-    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+def run_synthetic_gen(
+    *,
+    target: int = 20_000,
+    batch: int = 20,
+    workers: int = 16,
+    max_tokens: int = 16_000,
+    max_retries: int = 10,
+    backoff_s: float = 1.5,
+    out_path: str | Path | None = None,
+    model: str = _DEFAULT_MODEL,
+    prompt: str | None = None,
+) -> None:
+    from dotenv import load_dotenv
+    from openai import OpenAI
 
-    written = count_jsonl_lines(OUT_PATH)
-    print(f"log: resume existing_lines={written} need={TARGET - written}")
+    load_dotenv()
+
+    out = Path(out_path) if out_path is not None else _DEFAULT_OUT_PATH
+    prompt_text = prompt if prompt is not None else SYNTHETIC_DATA_GENERATION_PROMPT
+
+    print(
+        f"log: start target={target} batch={batch} workers={workers} "
+        f"max_tokens={max_tokens} model={model} out={out}"
+    )
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    written = count_jsonl_lines(out)
+    print(f"log: resume existing_lines={written} need={target - written}")
 
     client = OpenAI(
         base_url="https://openrouter.ai/api/v1",
@@ -125,21 +135,21 @@ def main() -> None:
     def work_unit() -> list[str]:
         return fetch_batch(
             client,
-            model=MODEL,
-            prompt=prompt,
-            batch=BATCH,
-            max_tokens=MAX_TOKENS,
-            max_retries=MAX_RETRIES,
-            base_backoff_s=BACKOFF_S,
+            model=model,
+            prompt=prompt_text,
+            batch=batch,
+            max_tokens=max_tokens,
+            max_retries=max_retries,
+            base_backoff_s=backoff_s,
         )
 
-    with OUT_PATH.open("a", encoding="utf-8") as f, ThreadPoolExecutor(
-        max_workers=max(1, WORKERS),
+    with out.open("a", encoding="utf-8") as f, ThreadPoolExecutor(
+        max_workers=max(1, workers),
         thread_name_prefix="synth",
     ) as executor:
-        futures = set()
-        while written < TARGET or futures:
-            while written < TARGET and len(futures) < max(1, WORKERS):
+        futures: set = set()
+        while written < target or futures:
+            while written < target and len(futures) < max(1, workers):
                 futures.add(executor.submit(work_unit))
             if not futures:
                 break
@@ -152,7 +162,7 @@ def main() -> None:
                     lines = []
                 before = written
                 for line in lines:
-                    if written >= TARGET:
+                    if written >= target:
                         break
                     f.write(line + "\n")
                     written += 1
@@ -160,10 +170,6 @@ def main() -> None:
                 added = written - before
                 print(
                     f"log: flush ok, +{added} lines (batch had {len(lines)}), "
-                    f"total={written}/{TARGET}"
+                    f"total={written}/{target}"
                 )
-    print(f"log: done total_lines={written} path={OUT_PATH}")
-
-
-if __name__ == "__main__":
-    main()
+    print(f"log: done total_lines={written} path={out}")

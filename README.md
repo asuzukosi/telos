@@ -54,17 +54,44 @@ calls.
 
   Use `WANDB_MODE=offline` for local-only logging without syncing to the hub.
 
-- **PyTorch + large-model scripts and GPU tests:** transformers alone does not install PyTorch. Use a build appropriate for your CPU or CUDA from [pytorch.org](https://pytorch.org/), or:
+- **CLI pipelines (train, eval, data):** install the extras you need (PyTorch is not in the core install):
 
   ```bash
-  pip install -e ".[llm-scripts]"
+  pip install -e ".[train]"        # LoRA training, embedding init
+  pip install -e ".[eval]"         # format validity eval
+  pip install -e ".[data]"         # clean/push, telos→chatml
+  pip install -e ".[data-gen]"     # synthetic jsonl via openrouter
+  pip install -e ".[dev,train,eval,data,data-gen]"   # full workspace
   ```
 
-  (`llm-scripts` is `torch>=2.0` in `pyproject.toml`; you may prefer a platform-specific wheel over the generic extra.)
+  Prefer a platform-specific PyTorch wheel from [pytorch.org](https://pytorch.org/) when installing `train` or `eval`. The legacy `llm-scripts` extra is only `torch>=2.0`; use `train` for the full training stack.
 
 - **`apply_trajectory_template(..., return_tensors="np")`:** install NumPy (`pip install -e ".[tokenizer-numpy]"` or any `numpy>=1.24`).
 
 - **Hugging Face:** tokenizer and model tests expect access to the gated checkpoint `meta-llama/Llama-3.1-8B`. Authenticate with `huggingface-cli login` (or env token) before running those tests.
+
+## Commands
+
+After `pip install -e .` (plus extras as needed), use the `telos` CLI or `python -m telos`. Example invocations are in [`command.txt`](command.txt).
+
+| Command | Extra | Purpose |
+|---------|-------|---------|
+| `telos train-telos-lora` | `train` | Fine-tune Telos-format LoRA |
+| `telos train-chatml-lora` | `train` | Fine-tune ChatML LoRA |
+| `telos init-telos-embeddings` | `train` | Initialize Telos reserved-token embeddings |
+| `telos init-chatml-embeddings` | `train` | Initialize ChatML marker embeddings |
+| `telos eval-format-validity` | `eval` | Generate and score format validity |
+| `telos data-clean-push` | `data` | Validate, split, push trajectory dataset |
+| `telos data-telos-to-chatml` | `data` | Add ChatML `messages` column to jsonl |
+| `telos data-synthetic-gen` | `data-gen` | Parallel synthetic trajectory generation |
+
+Multi-GPU training uses `torchrun` on the command module, for example:
+
+```bash
+torchrun --standalone --nproc_per_node=2 -m telos.cli.commands.train_telos_lora --help
+```
+
+List commands: `telos` or `telos --help`. Per-command help: `telos <command> --help`.
 
 ## Tests
 
@@ -90,6 +117,12 @@ src/telos/
 ├── trajectory.py       SDK: Trajectory container with dict/frame conversion
 ├── validators.py       SDK: sequence-level validation
 ├── sdk.py              SDK: step(), the stateless trajectory-advancement API
+├── cli/                CLI entry and command wrappers
+├── training/           LoRA training pipelines
+├── evaluation/         Eval harnesses
+├── dataset_prep/       Dataset validate, convert, generate, push
+├── model_init/         Embedding initialization for Telos / ChatML bases
+├── prompts/            Prompt constants for data generation
 └── runtime/            Reference runtime (one possible implementation)
     ├── tools.py        ToolRegistry, Tool, ToolError
     ├── runtime.py      run(), RunResult, terminal-action handling
@@ -193,8 +226,12 @@ namespace tools {
 ## Next steps
  
 - [x] HF generator (`HfGenerator` in `runtime/hf_generator.py`, wraps `AutoModelForCausalLM.generate`)
-- [ ] Hand-authored seed trajectories
-- [ ] Synthetic data generation pipeline
-- [ ] LoRA fine-tune of Llama-3.1-8B-base on the Telos format
-- [ ] ChatML+tools baseline fine-tune on matched data
+- [x] CLI pipelines (`telos` commands; see Commands above and `command.txt`)
+- [x] Synthetic data generation (`telos data-synthetic-gen`)
+- [x] LoRA fine-tune commands (`telos train-telos-lora`, `telos train-chatml-lora`)
+- [x] Format validity eval (`telos eval-format-validity`)
+- [x] Hand-authored seed trajectories
+- [x] Synthetic data generation pipeline
+- [x] LoRA fine-tune of Llama-3.1-8B-base on the Telos format
+- [x] ChatML+tools baseline fine-tune on matched data
 - [ ] Evaluation harness (BFCL subset, ToolBench subset, small SWE-bench-Lite subset, retry counting on failure-injected runs)

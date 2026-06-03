@@ -1,12 +1,10 @@
-# runtime (matches pyproject [project] dependencies)
+# core (matches pyproject [project] dependencies)
 tokenizers>=0.15
 transformers>=4.43
-datasets
-accelerate
-peft
-pyarrow
 huggingface_hub
-wandb>=0.16
+
+# training / eval / data pipelines (install as needed)
+# pip install -e ".[train,eval,data,data-gen]"
 
 # development (matches pyproject optional-dependencies dev)
 pytest>=7
