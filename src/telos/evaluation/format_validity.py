@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import re
-import time
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -16,6 +15,7 @@ from typing import Any, Callable, Optional
 
 import torch
 from datasets import load_dataset
+from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from telos.frames import parse as telos_parse, render as telos_render
@@ -257,17 +257,12 @@ def evaluate_format_validity(
     stop_ids = spec.stop_token_ids(tokenizer)
     results: list[ExampleResult] = []
     n = len(ds)
-    start = time.time()
     print(f"evaluating {n} {fmt} examples...")
 
-    for i, row in enumerate(ds):
+    for row in tqdm(ds, total=n, desc=f"{fmt} format validity", unit="ex"):
         r = _eval_row(row, model, tokenizer, spec, stop_ids, max_new_tokens)
         if r is not None:
             results.append(r)
-        if (i + 1) % 50 == 0:
-            elapsed = time.time() - start
-            rate = (i + 1) / elapsed
-            print(f"  {i + 1}/{n}  rate={rate:.1f} ex/s  eta={(n - i - 1) / rate:.0f}s")
 
     return results
 
