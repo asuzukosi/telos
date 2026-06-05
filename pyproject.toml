@@ -33,6 +33,11 @@ eval = [
     "peft",
     "tqdm",
 ]
+eval-benchmarks = [
+    "telos[eval]",
+    "swebench>=2.1.0",
+    "bfcl_eval @ file:third_party/gorilla/berkeley-function-call-leaderboard",
+]
 data = [
     "datasets",
     "pyarrow",
@@ -56,4 +61,11 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "third_party/ToolBench"]
+
+[tool.pyright]
+extraPaths = [
+    "third_party/gorilla/berkeley-function-call-leaderboard",
+    "third_party/ToolBench",
+    "third_party/ToolBench/toolbench/tooleval",
+]

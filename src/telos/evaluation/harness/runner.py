@@ -8,6 +8,8 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
+from tqdm import tqdm
+
 from telos.evaluation.harness.aggregate import aggregate_efficiency
 from telos.evaluation.harness.task import BenchmarkResult, BenchmarkRunMeta, EvalTask, TaskResult
 
@@ -25,17 +27,10 @@ def run_tasks(
 ) -> BenchmarkResult:
     task_list = list(tasks)
     load_each = load_sec / len(task_list) if load_sec and task_list else 0.0
-    it = task_list
-    if desc:
-        try:
-            from tqdm import tqdm
-
-            it = tqdm(task_list, desc=desc, unit="task")
-        except ImportError:
-            pass
+    label = desc or meta.suite or "eval"
 
     results: list[TaskResult] = []
-    for task in it:
+    for task in tqdm(task_list, desc=label, unit="task"):
         t0 = time.perf_counter()
         tr = evaluate(task)
         if tr.timing.total_sec <= 0:

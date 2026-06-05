@@ -7,7 +7,7 @@ from telos.cli.commands import (
     data_clean_push,
     data_synthetic_gen,
     data_telos_to_chatml,
-    eval_format_validity,
+    eval_benchmarks,
     initialize_chatml_embeddings,
     initialize_telos_embeddings,
     verify_telos_embeddings,
@@ -18,7 +18,7 @@ from telos.cli.commands import (
 COMMANDS: dict[str, Callable[[list[str] | None], None]] = {
     "train-telos-lora": train_telos_lora.main,
     "train-chatml-lora": train_chatml_lora.main,
-    "eval-format-validity": eval_format_validity.main,
+    "eval-benchmarks": eval_benchmarks.main,
     "init-telos-embeddings": initialize_telos_embeddings.main,
     "verify-telos-embeddings": verify_telos_embeddings.main,
     "init-chatml-embeddings": initialize_chatml_embeddings.main,

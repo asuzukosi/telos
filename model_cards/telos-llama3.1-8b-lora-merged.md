@@ -49,7 +49,7 @@ Paired ChatML baseline for the same study: [`kosiasuzu/chatml-llama3.1-8b-lora-m
 ### Downstream Use
 
 - Load with `TelosTokenizer` + `transformers` generation on rendered prelude text.
-- Evaluate with `telos eval-format-validity --format telos`.
+- Evaluate with `telos eval-benchmarks --suite format_validity --format telos`.
 
 ### Out-of-Scope Use
 
@@ -122,7 +122,7 @@ print(generated_frames)
 **Telos CLI eval** (`pip install -e ".[eval]"`):
 
 ```bash
-telos eval-format-validity \
+telos eval-benchmarks --suite format_validity \
   --format telos \
   --model kosiasuzu/telos-llama3.1-8b-lora-merged \
   --adapter-mode merged \
@@ -171,7 +171,7 @@ torchrun --standalone --nproc_per_node=2 -m telos.cli.commands.train_telos_lora 
 ## Evaluation
 
 - **Split:** `eval` on `kosiasuzu/telos-agent-trajectory-dataset`
-- **Metrics:** Telos parse rate, structural validity (`telos eval-format-validity --format telos`)
+- **Metrics:** Telos parse rate, structural validity (`telos eval-benchmarks --suite format_validity --format telos`)
 - **Results:** TBD — fill after eval run
 
 ## Technical Specifications

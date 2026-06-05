@@ -1,13 +1,13 @@
 from __future__ import annotations
-
 import json
-
+from typing import cast
 import pytest
-
+from transformers import PreTrainedTokenizerBase
 from telos.evaluation.harness.backend import ModelBackend
 from telos.evaluation.harness.backends import ChatMLBackend
 from telos.evaluation.harness.backends.chatml_backend import _parse, _to_messages
 from telos.runtime import Tool, ToolRegistry
+from telos.runtime.hf_generator import HfGenerator
 from telos.trajectory import Trajectory
 
 
@@ -40,7 +40,10 @@ class ScriptedGenerator:
 
 @pytest.fixture
 def backend() -> ChatMLBackend:
-    return ChatMLBackend(FakeChatMLTokenizer(), ScriptedGenerator([]))
+    return ChatMLBackend(
+        cast(PreTrainedTokenizerBase, FakeChatMLTokenizer()),
+        cast(HfGenerator, ScriptedGenerator([])),
+    )
 
 
 def test_to_messages():
@@ -52,6 +55,7 @@ def test_to_messages():
 def test_parse_tool_and_text():
     call, _, stop = _parse('<|python_tag|>{"name": "answer", "arguments": "{}"}<|eom_id|>')
     assert stop == "tool_call"
+    assert call is not None
     assert call["name"] == "answer"
     _, text, stop = _parse("hello<|eot_id|>")
     assert text == "hello"
@@ -59,9 +63,12 @@ def test_parse_tool_and_text():
 
 
 def test_run_terminal(backend: ChatMLBackend):
-    backend.generator = ScriptedGenerator([
-        '<|python_tag|>{"name": "answer", "arguments": "{\\"text\\": \\"42\\"}"}<|eom_id|>',
-    ])
+    backend.generator = cast(
+        HfGenerator,
+        ScriptedGenerator([
+            '<|python_tag|>{"name": "answer", "arguments": "{\\"text\\": \\"42\\"}"}<|eom_id|>',
+        ]),
+    )
     out = backend.run(
         [{"type": "goal", "content": "g"}, {"type": "mission", "content": "m"}],
         ToolRegistry(),
@@ -72,10 +79,13 @@ def test_run_terminal(backend: ChatMLBackend):
 
 
 def test_run_tool_loop(backend: ChatMLBackend):
-    backend.generator = ScriptedGenerator([
-        '<|python_tag|>{"name": "echo", "arguments": "{\\"value\\": \\"a\\"}"}<|eom_id|>',
-        '<|python_tag|>{"name": "answer", "arguments": "{\\"text\\": \\"done\\"}"}<|eom_id|>',
-    ])
+    backend.generator = cast(
+        HfGenerator,
+        ScriptedGenerator([
+            '<|python_tag|>{"name": "echo", "arguments": "{\\"value\\": \\"a\\"}"}<|eom_id|>',
+            '<|python_tag|>{"name": "answer", "arguments": "{\\"text\\": \\"done\\"}"}<|eom_id|>',
+        ]),
+    )
     reg = ToolRegistry()
     reg.register(Tool("echo", lambda value: value, {"name": "echo", "parameters": {"type": "object", "properties": {"value": {"type": "string"}}, "required": ["value"]}}))
     out = backend.run(Trajectory([{"type": "goal", "content": "g"}, {"type": "mission", "content": "m"}]), reg)

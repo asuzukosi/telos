@@ -85,41 +85,67 @@ telos train-chatml-lora \
 # default 100 eval rows (--num-examples -1 for all evaluable rows in the split)
 # uses TelosTokenizer encode/decode (reserved ids); re-run if you had old raw-AutoTokenizer telos metrics
 # generate telos completions and score parse/structural validity; peft = base + adapter
-telos eval-format-validity \
+telos eval-benchmarks \
+  --suite format_validity \
   --format telos \
   --model kosiasuzu/telos-agent-llama-3.1-8b-init \
   --adapter-mode peft \
   --adapter-id kosiasuzu/telos-llama3.1-8b-lora-adapter \
-  --dataset kosiasuzu/telos-agent-trajectory-dataset \
-  --split eval \
-  --output results/telos_format_validity_peft.json
+  --output-dir results/benchmarks/format_validity
 
 # telos eval on a merged (fused) checkpoint; --model is the full checkpoint, no --adapter-id
-telos eval-format-validity \
+telos eval-benchmarks \
+  --suite format_validity \
   --format telos \
   --model kosiasuzu/telos-llama3.1-8b-lora-merged \
   --adapter-mode merged \
-  --dataset kosiasuzu/telos-agent-trajectory-dataset \
-  --split eval \
-  --output results/telos_format_validity_merged.json
+  --output-dir results/benchmarks/format_validity
 
 
 # --- format validity eval: chatml ---
 # same eval harness for chatml message format; peft = base + adapter
-telos eval-format-validity \
+telos eval-benchmarks \
+  --suite format_validity \
   --format chatml \
   --model kosiasuzu/chatml-agent-llama-3.1-8b-init \
   --adapter-mode peft \
   --adapter-id kosiasuzu/chatml-llama3.1-8b-lora-adapter \
-  --dataset kosiasuzu/telos-agent-trajectory-dataset \
-  --split eval \
-  --output results/chatml_format_validity_peft.json
+  --output-dir results/benchmarks/format_validity
 
 # chatml eval on a merged checkpoint
-telos eval-format-validity \
+telos eval-benchmarks \
+  --suite format_validity \
   --format chatml \
   --model kosiasuzu/chatml-llama3.1-8b-lora-merged \
   --adapter-mode merged \
-  --dataset kosiasuzu/telos-agent-trajectory-dataset \
-  --split eval \
-  --output results/chatml_format_validity_merged.json
+  --output-dir results/benchmarks/format_validity
+
+
+# --- toolbench upstream subset (cached tool env) ---
+# requires: git submodule update --init third_party/ToolBench && data.zip under third_party/ToolBench/data/
+telos eval-benchmarks \
+  --suite toolbench \
+  --format telos \
+  --model kosiasuzu/telos-llama3.1-8b-lora-merged \
+  --adapter-mode merged \
+  --num-examples 3 \
+  --output-dir results/benchmarks/toolbench
+
+telos eval-benchmarks \
+  --suite toolbench \
+  --format chatml \
+  --model kosiasuzu/chatml-llama3.1-8b-lora-merged \
+  --adapter-mode merged \
+  --num-examples 3 \
+  --output-dir results/benchmarks/toolbench
+
+# toolbench re-score only (structural upstream pass rate; writes converted answers to score/)
+telos eval-benchmarks \
+  --suite toolbench \
+  --format telos \
+  --model kosiasuzu/telos-llama3.1-8b-lora-merged \
+  --score-only \
+  --output-dir results/benchmarks/toolbench
+
+# optional full upstream gpt judge (requires OPENAI_API_KEY)
+# TOOLEVAL_GPT=1 telos eval-benchmarks --suite toolbench ...

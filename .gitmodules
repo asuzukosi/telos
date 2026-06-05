@@ -1,0 +1,12 @@
+[submodule "third_party/gorilla"]
+	path = third_party/gorilla
+	url = https://github.com/ShishirPatil/gorilla.git
+[submodule "third_party/SWE-bench"]
+	path = third_party/SWE-bench
+	url = https://github.com/princeton-nlp/SWE-bench.git
+[submodule "third_party/mini-swe-agent"]
+	path = third_party/mini-swe-agent
+	url = https://github.com/SWE-agent/mini-swe-agent.git
+[submodule "third_party/ToolBench"]
+	path = third_party/ToolBench
+	url = https://github.com/OpenBMB/ToolBench.git

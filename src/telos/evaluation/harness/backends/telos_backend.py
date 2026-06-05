@@ -99,6 +99,9 @@ class TelosBackend:
         )
         return BackendRunResult(
             run=result,
+            stopped_on=result.stopped_on,
+            iterations=result.iterations,
+            final_answer=result.final_answer,
             tool_sec=timed.tool_sec,
             total_sec=time.perf_counter() - t0,
             **self._stats_result(stats),

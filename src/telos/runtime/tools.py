@@ -1,9 +1,16 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Any, Callable, Iterator
+from typing import Any, Callable, Iterator, Protocol
 
 class ToolError(Exception):
     pass
+
+
+class ToolRegistryLike(Protocol):
+    def schemas(self) -> list[dict[str, Any]]: ...
+
+    def call(self, name: str, args: dict[str, Any]) -> Any: ...
+
 
 @dataclass
 class Tool:

@@ -50,7 +50,7 @@ This checkpoint is the **ChatML+tools comparison arm**—same data and training 
 ### Downstream Use
 
 - Load with `transformers` + `apply_chat_template` (tokenizer bundled with this checkpoint).
-- Run format-validity or task benchmarks with `telos eval-format-validity --format chatml`.
+- Run format-validity or task benchmarks with `telos eval-benchmarks --suite format_validity --format chatml`.
 
 ### Out-of-Scope Use
 
@@ -114,7 +114,7 @@ print(text)
 **Telos CLI eval** (requires `pip install -e ".[eval]"` from the Telos repo):
 
 ```bash
-telos eval-format-validity \
+telos eval-benchmarks --suite format_validity \
   --format chatml \
   --model kosiasuzu/chatml-llama3.1-8b-lora-merged \
   --adapter-mode merged \
@@ -198,7 +198,7 @@ Fill from your W&B / cluster logs (GPU type, world size, wall-clock, peak VRAM).
 Run:
 
 ```bash
-telos eval-format-validity \
+telos eval-benchmarks --suite format_validity \
   --format chatml \
   --model kosiasuzu/chatml-llama3.1-8b-lora-merged \
   --adapter-mode merged \

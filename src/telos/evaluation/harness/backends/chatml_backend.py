@@ -15,6 +15,7 @@ from telos.dataset_prep.telos_to_chatml import telos_to_chatml
 from telos.evaluation.harness.backend import BackendRunResult, BackendStepResult
 from telos.evaluation.harness.backends.common import GenStats, TimedToolRegistry
 from telos.evaluation.harness.load import AdapterMode
+from telos.evaluation.harness.chatml_fc import parse_chatml_fc_call
 from telos.runtime.hf_generator import HfGenerator
 from telos.runtime.tools import ToolError, ToolRegistry
 from telos.trajectory import Trajectory
@@ -53,6 +54,9 @@ def _parse(text: str) -> tuple[Optional[dict], str, str]:
             return call, "", "tool_call"
         except json.JSONDecodeError as e:
             return None, "", f"parse_error: {e.msg}"
+    bare = parse_chatml_fc_call(text)
+    if bare is not None:
+        return bare, "", "tool_call"
     m = _TEXT_RE.search(text)
     content = (m.group(1) if m else text).strip()
     return (None, content, "assistant_text" if content else "parse_error: empty")

@@ -5,7 +5,7 @@ from telos.constants import FrameType
 from telos.frames import Frame
 from telos.sdk import step
 from telos.trajectory import Trajectory
-from telos.runtime.tools import ToolRegistry, ToolError
+from telos.runtime.tools import ToolError, ToolRegistryLike
 
 terminal_tools = {"answer", "fail"}
 
@@ -36,7 +36,7 @@ class RunResult:
 
 def run(
     trajectory, 
-    registry: ToolRegistry,
+    registry: ToolRegistryLike,
     *, 
     tokenizer,
     generate: GenerateFn,

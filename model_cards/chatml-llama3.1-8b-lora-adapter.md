@@ -48,7 +48,7 @@ For single-file inference, use: [`kosiasuzu/chatml-llama3.1-8b-lora-merged`](htt
 ### Downstream Use
 
 - Merge: `model.merge_and_unload()` → equivalent to merged hub checkpoint.
-- Eval: `telos eval-format-validity --format chatml --adapter-mode peft`
+- Eval: `telos eval-benchmarks --suite format_validity --format chatml --adapter-mode peft`
 
 ### Out-of-Scope Use
 
@@ -90,7 +90,7 @@ print(tokenizer.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_token
 **CLI eval (PEFT mode):**
 
 ```bash
-telos eval-format-validity \
+telos eval-benchmarks --suite format_validity \
   --format chatml \
   --model kosiasuzu/chatml-agent-llama-3.1-8b-init \
   --adapter-mode peft \

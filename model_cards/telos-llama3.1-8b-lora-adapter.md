@@ -45,7 +45,7 @@ For single-file inference without PEFT, use the merged checkpoint: [`kosiasuzu/t
 ### Downstream Use
 
 - Merge locally: `model.merge_and_unload()` (as in `telos` training push path).
-- Eval: `telos eval-format-validity --format telos --adapter-mode peft --model <init> --adapter-id kosiasuzu/telos-llama3.1-8b-lora-adapter`
+- Eval: `telos eval-benchmarks --suite format_validity --format telos --adapter-mode peft --model <init> --adapter-id kosiasuzu/telos-llama3.1-8b-lora-adapter`
 
 ### Out-of-Scope Use
 
@@ -79,7 +79,7 @@ model.eval()
 **CLI eval (PEFT mode):**
 
 ```bash
-telos eval-format-validity \
+telos eval-benchmarks --suite format_validity \
   --format telos \
   --model kosiasuzu/telos-agent-llama-3.1-8b-init \
   --adapter-mode peft \

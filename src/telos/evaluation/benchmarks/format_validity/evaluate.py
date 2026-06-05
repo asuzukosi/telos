@@ -1,9 +1,4 @@
-"""
-format-validity evaluation for telos and chatml LoRA-trained models.
-
-usage:
-    telos eval-format-validity --format telos --model ... --dataset ... --output out.json
-"""
+"""format-validity helpers: generation, parsing, and metrics for FormatValiditySuite."""
 
 from __future__ import annotations
 
@@ -11,16 +6,15 @@ import json
 import random
 import re
 from collections import defaultdict
-from dataclasses import asdict, dataclass, field
-from pathlib import Path
-from typing import Any, Callable, Optional
+import time
+from dataclasses import dataclass, field
+from typing import Any, Callable, Optional, cast
 
 import torch
-from datasets import load_dataset
-from tqdm import tqdm
 from transformers import AutoTokenizer, PreTrainedTokenizerBase
 
-from telos.evaluation.harness.load import AdapterMode, load_model, model_device
+from telos.evaluation.harness.load import model_device
+from telos.evaluation.harness.task import TaskResult, TaskTiming, TaskTokens
 from telos.frames import parse as telos_parse, render as telos_render
 from telos.tokenizer import TelosTokenizer
 from telos.trajectory import Trajectory
@@ -35,7 +29,7 @@ _ASSISTANT_TEXT_RE = re.compile(
 
 
 @dataclass
-class ExampleResult:
+class ValidityResult:
     id: str
     domain: str
     parsed_ok: bool
@@ -118,7 +112,13 @@ def _telos_decode_output(tt: TelosTokenizer, token_ids: list[int]) -> str:
 
 def _telos_pad_token_id(tt: TelosTokenizer) -> int:
     hf = tt.hf
-    return hf.pad_token_id if hf.pad_token_id is not None else hf.eos_token_id
+    pad = hf.pad_token_id
+    if isinstance(pad, int):
+        return pad
+    eos = hf.eos_token_id
+    if isinstance(eos, int):
+        return eos
+    raise ValueError("tokenizer has no pad_token_id or eos_token_id")
 
 
 def _chatml_input_ids(row: dict, tokenizer: PreTrainedTokenizerBase) -> list[int]:
@@ -129,11 +129,12 @@ def _chatml_input_ids(row: dict, tokenizer: PreTrainedTokenizerBase) -> list[int
     )
     if cut >= len(messages):
         return []
-    return tokenizer.apply_chat_template(
+    encoded = tokenizer.apply_chat_template(
         messages[:cut],
         tokenize=True,
         add_generation_prompt=True,
     )
+    return list(cast(list[int], encoded))
 
 
 def _chatml_decode_output(tokenizer: PreTrainedTokenizerBase, token_ids: list[int]) -> str:
@@ -141,27 +142,39 @@ def _chatml_decode_output(tokenizer: PreTrainedTokenizerBase, token_ids: list[in
 
 
 def _chatml_pad_token_id(tokenizer: PreTrainedTokenizerBase) -> int:
-    return tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
+    pad = tokenizer.pad_token_id
+    if isinstance(pad, int):
+        return pad
+    eos = tokenizer.eos_token_id
+    if isinstance(eos, int):
+        return eos
+    raise ValueError("tokenizer has no pad_token_id or eos_token_id")
 
 
 def _telos_stop_ids(tt: TelosTokenizer) -> list[int]:
     ids = [tt.end_id]
     eos = tt.hf.eos_token_id
-    if eos is not None and eos not in ids:
+    if isinstance(eos, int) and eos not in ids:
         ids.append(eos)
     return ids
 
 
 def _chatml_stop_ids(tokenizer: PreTrainedTokenizerBase) -> list[int]:
     ids: list[int] = []
+    unk = tokenizer.unk_token_id
+    convert_tokens_to_ids = cast(Callable[[str], int], tokenizer.convert_tokens_to_ids)
     for token in ("<|eot_id|>", "<|eom_id|>"):
-        tid = tokenizer.convert_tokens_to_ids(token)
-        if tid is not None and tid != tokenizer.unk_token_id:
-            ids.append(tid)
+        raw_tid = convert_tokens_to_ids(token)
+        if isinstance(raw_tid, int) and raw_tid != unk:
+            ids.append(raw_tid)
     eos = tokenizer.eos_token_id
-    if eos is not None and eos not in ids:
+    if isinstance(eos, int) and eos not in ids:
         ids.append(eos)
-    return ids or [tokenizer.eos_token_id]
+    if ids:
+        return ids
+    if isinstance(eos, int):
+        return [eos]
+    raise ValueError("tokenizer has no stop token ids")
 
 
 def _telos_check(row: dict, generated_text: str) -> tuple[bool, bool, Optional[str], list[str]]:
@@ -235,7 +248,7 @@ FORMAT_SPECS: dict[str, _FormatSpec] = {
 }
 
 
-def generate_completion(
+def _generate_completion(
     model,
     spec: _FormatSpec,
     tokenizer,
@@ -262,20 +275,22 @@ def generate_completion(
     return spec.decode_output(tokenizer, gen_ids), len(gen_ids)
 
 
-def _eval_row(
+def eval_row(
     row: dict,
     model,
     tokenizer,
     spec: _FormatSpec,
     stop_ids: list[int],
     max_new_tokens: int,
-) -> Optional[ExampleResult]:
+) -> Optional[tuple[ValidityResult, int, float]]:
     input_ids = spec.build_input_ids(row, tokenizer)
     if not input_ids:
         return None
 
+    prompt_tokens = len(input_ids)
+    t0 = time.perf_counter()
     try:
-        text, n_tok = generate_completion(
+        text, n_gen = _generate_completion(
             model,
             spec,
             tokenizer,
@@ -284,28 +299,80 @@ def _eval_row(
             stop_token_ids=stop_ids,
         )
     except Exception as e:
-        return ExampleResult(
-            id=row["id"],
-            domain=row["domain"],
-            parsed_ok=False,
-            structurally_valid=False,
-            parse_error=f"generation error: {e}",
+        infer = time.perf_counter() - t0
+        return (
+            ValidityResult(
+                id=row["id"],
+                domain=row["domain"],
+                parsed_ok=False,
+                structurally_valid=False,
+                parse_error=f"generation error: {e}",
+            ),
+            prompt_tokens,
+            infer,
         )
 
     parsed_ok, valid, parse_err, val_errs = spec.check_output(row, text)
-    return ExampleResult(
-        id=row["id"],
-        domain=row["domain"],
-        parsed_ok=parsed_ok,
-        structurally_valid=valid,
-        parse_error=parse_err,
-        validation_errors=val_errs,
-        num_generated_tokens=n_tok,
-        generated_text_preview=text[:200],
+    infer = time.perf_counter() - t0
+    return (
+        ValidityResult(
+            id=row["id"],
+            domain=row["domain"],
+            parsed_ok=parsed_ok,
+            structurally_valid=valid,
+            parse_error=parse_err,
+            validation_errors=val_errs,
+            num_generated_tokens=n_gen,
+            generated_text_preview=text[:200],
+        ),
+        prompt_tokens,
+        infer,
     )
 
 
-def _prepare_eval_dataset(ds, fmt: str, num_examples: int, seed: int):
+def task_result(res: ValidityResult, *, prompt: int, infer_sec: float) -> TaskResult:
+    return TaskResult(
+        task_id=res.id,
+        domain=res.domain,
+        success=res.structurally_valid,
+        metrics={"parsed_ok": res.parsed_ok, "structurally_valid": res.structurally_valid},
+        timing=TaskTiming(inference_sec=infer_sec, total_sec=infer_sec),
+        tokens=TaskTokens(prompt_tokens=prompt, generated_tokens=res.num_generated_tokens),
+        detail={
+            "parse_error": res.parse_error,
+            "validation_errors": res.validation_errors,
+            "generated_text_preview": res.generated_text_preview,
+        },
+    )
+
+
+def suite_metrics(tasks: list[TaskResult]) -> dict[str, Any]:
+    """format-validity rates (merged into benchmark metrics by run_tasks)."""
+    n = len(tasks)
+    if n == 0:
+        return {"n": 0, "parse_rate": 0.0, "valid_rate": 0.0}
+    parsed = sum(1 for t in tasks if t.metrics.get("parsed_ok"))
+    valid = sum(1 for t in tasks if t.metrics.get("structurally_valid"))
+    by_domain: dict[str, dict[str, int]] = defaultdict(lambda: {"n": 0, "parsed": 0, "valid": 0})
+    error_counts: dict[str, int] = defaultdict(int)
+    for t in tasks:
+        by_domain[t.domain]["n"] += 1
+        by_domain[t.domain]["parsed"] += int(t.metrics.get("parsed_ok") is True)
+        by_domain[t.domain]["valid"] += int(t.metrics.get("structurally_valid") is True)
+        if t.detail.get("parse_error"):
+            k = f"parse: {str(t.detail['parse_error']).split(':')[0][:50]}"
+            error_counts[k] += 1
+        for ve in t.detail.get("validation_errors") or []:
+            error_counts[f"validation: {ve.split(':')[0][:50]}"] += 1
+    return {
+        "parse_rate": parsed / n,
+        "valid_rate": valid / n,
+        "by_domain": dict(by_domain),
+        "top_failures": dict(sorted(error_counts.items(), key=lambda x: -x[1])[:10]),
+    }
+
+
+def prepare_eval_dataset(ds, fmt: str, num_examples: int, seed: int):
     """filter to evaluable rows, then sample (num_examples < 0 = full split)."""
     n_raw = len(ds)
     ds_ok = ds.filter(lambda row: _row_evaluable(row, fmt))
@@ -327,57 +394,6 @@ def _prepare_eval_dataset(ds, fmt: str, num_examples: int, seed: int):
 
     indices = random.Random(seed).sample(range(n_ok), k)
     return ds_ok.select(indices), n_raw, n_ok, k
-
-
-def evaluate_format_validity(
-    model,
-    spec: _FormatSpec,
-    tokenizer,
-    ds,
-    *,
-    format_name: str,
-    max_new_tokens: int = 1024,
-) -> list[ExampleResult]:
-    stop_ids = spec.stop_token_ids(tokenizer)
-    results: list[ExampleResult] = []
-    n = len(ds)
-    print(f"evaluating {n} {format_name} examples...")
-
-    for row in tqdm(ds, total=n, desc=f"{format_name} format validity", unit="ex"):
-        r = _eval_row(row, model, tokenizer, spec, stop_ids, max_new_tokens)
-        if r is not None:
-            results.append(r)
-
-    return results
-
-
-def aggregate(results: list[ExampleResult]) -> dict[str, Any]:
-    n = len(results)
-    if n == 0:
-        return {"n": 0}
-
-    by_domain: dict[str, dict[str, int]] = defaultdict(lambda: {"n": 0, "parsed": 0, "valid": 0})
-    error_counts: dict[str, int] = defaultdict(int)
-    n_parsed = n_valid = 0
-
-    for r in results:
-        n_parsed += r.parsed_ok
-        n_valid += r.structurally_valid
-        by_domain[r.domain]["n"] += 1
-        by_domain[r.domain]["parsed"] += int(r.parsed_ok)
-        by_domain[r.domain]["valid"] += int(r.structurally_valid)
-        if r.parse_error:
-            error_counts[f"parse: {r.parse_error.split(':')[0][:50]}"] += 1
-        for ve in r.validation_errors:
-            error_counts[f"validation: {ve.split(':')[0][:50]}"] += 1
-
-    return {
-        "n": n,
-        "parse_rate": n_parsed / n,
-        "valid_rate": n_valid / n,
-        "by_domain": dict(by_domain),
-        "top_failures": dict(sorted(error_counts.items(), key=lambda x: -x[1])[:10]),
-    }
 
 
 def print_summary(summary: dict[str, Any]) -> None:
@@ -402,79 +418,3 @@ def print_summary(summary: dict[str, Any]) -> None:
             print(f"  {count:>5}  {failure}")
 
 
-def evaluate(
-    model_id: str,
-    dataset_id: str,
-    split: str,
-    fmt: str,
-    output_path: Path,
-    *,
-    adapter_mode: AdapterMode | str = AdapterMode.MERGED,
-    adapter_id: Optional[str] = None,
-    num_examples: int = 100,
-    sample_seed: int = 42,
-    max_new_tokens: int = 1024,
-) -> None:
-    if fmt not in FORMAT_SPECS:
-        raise ValueError(f"format must be 'telos' or 'chatml', got: {fmt!r}")
-
-    spec = FORMAT_SPECS[fmt]
-
-    mode = AdapterMode(adapter_mode)
-    print(f"loading base model {model_id} (adapter_mode={mode.value})...")
-    if mode == AdapterMode.PEFT:
-        print(f"  adapter: {adapter_id}")
-    model = load_model(model_id, mode, adapter_id)
-    print(f"loading tokenizer for {fmt}...")
-    tokenizer = spec.load_tokenizer(model_id)
-    model.eval()
-
-    print(f"loading dataset {dataset_id} split={split}...")
-    ds_full = load_dataset(dataset_id, split=split)
-    ds, split_len, evaluable_len, run_len = _prepare_eval_dataset(
-        ds_full, fmt, num_examples, sample_seed
-    )
-    if num_examples < 0:
-        print(f"evaluating full evaluable split ({run_len} / {split_len} rows)")
-    elif run_len < evaluable_len:
-        print(
-            f"random sample: {run_len} / {evaluable_len} evaluable rows "
-            f"({split_len} in split, num_examples={num_examples}, seed={sample_seed})"
-        )
-    else:
-        print(f"evaluating all {run_len} evaluable rows ({split_len} in split)")
-
-    results = evaluate_format_validity(
-        model,
-        spec,
-        tokenizer,
-        ds,
-        format_name=fmt,
-        max_new_tokens=max_new_tokens,
-    )
-    summary = aggregate(results)
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("w") as f:
-        json.dump(
-            {
-                "model": model_id,
-                "adapter": adapter_id,
-                "adapter_mode": mode.value,
-                "dataset": dataset_id,
-                "split": split,
-                "format": fmt,
-                "split_size": split_len,
-                "evaluable_size": evaluable_len,
-                "num_examples": num_examples,
-                "num_run": run_len,
-                "sample_seed": sample_seed,
-                "num_examples": len(results),
-                "summary": summary,
-                "results": [asdict(r) for r in results],
-            },
-            f,
-            indent=2,
-        )
-    print(f"\nresults written to {output_path}\n")
-    print_summary(summary)

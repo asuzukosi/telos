@@ -81,7 +81,8 @@ After `pip install -e .` (plus extras as needed), use the `telos` CLI or `python
 | `telos init-telos-embeddings` | `train` | Initialize Telos reserved-token embeddings |
 | `telos verify-telos-embeddings` | `train` | Verify Telos init checkpoint embedding rows |
 | `telos init-chatml-embeddings` | `train` | Initialize ChatML marker embeddings |
-| `telos eval-format-validity` | `eval` | Generate and score format validity |
+| `telos eval-benchmarks --suite format_validity` | `eval` | Generate and score format validity |
+| `telos eval-benchmarks` | `eval-benchmarks` | BFCL / ToolBench subset inference + scoring (telos or chatml) |
 | `telos data-clean-push` | `data` | Validate, split, push trajectory dataset |
 | `telos data-telos-to-chatml` | `data` | Add ChatML `messages` column to jsonl |
 | `telos data-synthetic-gen` | `data-gen` | Parallel synthetic trajectory generation |
@@ -162,7 +163,7 @@ Telos wire strings use markers like `<|goal|>`, but **training and the model see
 
 - **Do:** `ids = tt.encode(render(frames))` (or `apply_trajectory_template(..., tokenize=True)`), then `model.generate` on `ids`; decode with `tt.decode(generated_ids)` before `parse()`.
 - **Do not:** `AutoTokenizer(rendered_wire)` or `tt.hf(rendered_wire)` — that BPE-tokenizes the marker *strings* and does not match training.
-- **Eval:** `telos eval-format-validity --format telos` uses `TelosTokenizer` automatically. ChatML eval uses `apply_chat_template` on the instruct tokenizer as usual.
+- **Eval:** `telos eval-benchmarks --suite format_validity --format telos` uses `TelosTokenizer` automatically. ChatML eval uses `apply_chat_template` on the instruct tokenizer as usual.
 
 Any prior Telos format-validity numbers run with raw `AutoTokenizer` on wire text should be discarded and re-run after this fix.
  
@@ -240,9 +241,11 @@ namespace tools {
 - [x] CLI pipelines (`telos` commands; see Commands above and `command.txt`)
 - [x] Synthetic data generation (`telos data-synthetic-gen`)
 - [x] LoRA fine-tune commands (`telos train-telos-lora`, `telos train-chatml-lora`)
-- [x] Format validity eval (`telos eval-format-validity`)
+- [x] Format validity eval (`telos eval-benchmarks --suite format_validity`)
 - [x] Hand-authored seed trajectories
 - [x] Synthetic data generation pipeline
 - [x] LoRA fine-tune of Llama-3.1-8B-base on the Telos format
 - [x] ChatML+tools baseline fine-tune on matched data
-- [ ] Evaluation harness (BFCL subset, ToolBench subset, small SWE-bench-Lite subset, retry counting on failure-injected runs)
+- [x] BFCL subset eval (`telos eval-benchmarks --suite bfcl`)
+- [x] ToolBench upstream subset (`telos eval-benchmarks --suite toolbench`)
+- [ ] SWE-bench-Lite subset

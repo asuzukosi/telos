@@ -19,7 +19,8 @@ def causal_lm_load_kwargs(dtype: torch.dtype) -> dict[str, Any]:
     if not torch.cuda.is_available():
         return {"torch_dtype": dtype, "device_map": "cpu"}
     total_gib = torch.cuda.get_device_properties(0).total_memory / (1024**3)
-    cap = max(1, int(total_gib - 2))
+    # leave headroom for long bfcl chatml prompts + kv during generate
+    cap = max(1, int(total_gib - 4))
     return {
         "torch_dtype": dtype,
         "device_map": "auto",
