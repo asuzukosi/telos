@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Callable, Optional
-from telos.constants import TERMINAL_TOOLS, FrameType, FrameOwner
-from telos.frames import Frame
+from agenticml.constants import TERMINAL_TOOLS, FrameType, FrameOwner
+from agenticml.frames import Frame
 
 
 @dataclass
@@ -179,7 +179,7 @@ def validate(
     *,
     allow_unresolved_actions_at_end: bool = False,
 ) -> list[Violation]:
-    """check a trajectory against telos sequence rules.
+    """check a trajectory against agenticml sequence rules.
 
     on the wire, <|end|> closes a model turn; <|result|> is runtime-owned and
     usually appears in the next segment (see render() in frames.py). parsed
