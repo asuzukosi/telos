@@ -1,6 +1,6 @@
 # eval dependencies
 
-Benchmark matrix (v1): **BFCL**, **ToolBench upstream** (cached tool results), **SWE-bench-Lite** (`swebench` grader), plus optional **format validity** on our models. A minimal internal Telos trajectory smoke may be added later if time permits (see benchmark plan — future section).
+Benchmark suites: **BFCL**, **ToolBench upstream** (cached tool results), **SWE-bench-Lite** (`swebench` grader), plus optional **format validity** on our models.
 
 ## python
 
@@ -46,17 +46,19 @@ Writes gorilla result files under `results/benchmarks/bfcl/`, scores via upstrea
 
 Scoring imports `bfcl_eval.eval_checker.eval_runner`, which loads gorilla’s full dependency set (`overrides`, `tree_sitter`, etc.). `.[eval-benchmarks]` installs the submodule package; `.[eval]` alone is not enough for BFCL.
 
-ToolBench subset (3.1): `SUBSET_IDS` in [`toolbench/subset.py`](../src/telos/evaluation/benchmarks/toolbench/subset.py) pins 10 `G1_instruction` query IDs. Loader: `telos.evaluation.benchmarks.toolbench.subset`. Data root: `TOOLBENCH_DATA` env or `third_party/ToolBench` (`data/test_instruction/G1_instruction.json`, `data/test_query_ids/G1_instruction.json`).
+ToolBench subset: `SUBSET_IDS` in [`toolbench/subset.py`](../src/telos/evaluation/benchmarks/toolbench/subset.py) pins 10 `G1_instruction` query IDs. Loader: `telos.evaluation.benchmarks.toolbench.subset`. Data root: `TOOLBENCH_DATA` env or `third_party/ToolBench` (`data/test_instruction/G1_instruction.json`, `data/test_query_ids/G1_instruction.json`).
 
-ToolBench cache (3.2): [`toolbench/cache.py`](../src/telos/evaluation/benchmarks/toolbench/cache.py) exposes `CachedToolEnv` and `execute_tool_call`. Tool calls run via upstream `get_rapidapi_response(..., api_customization=True)` against local `data/toolenv/tools/*/api.py`; responses are persisted under `data/tool_response_cache/` for replay. No live RapidAPI proxy.
+ToolBench cache: [`toolbench/cache.py`](../src/telos/evaluation/benchmarks/toolbench/cache.py) exposes `CachedToolEnv` and `execute_tool_call`. Tool calls run via upstream `get_rapidapi_response(..., api_customization=True)` against local `data/toolenv/tools/*/api.py`; responses are persisted under `data/tool_response_cache/` for replay. No live RapidAPI proxy.
 
-ToolBench driver (3.3): `ToolBenchSuite` in [`toolbench/suite.py`](../src/telos/evaluation/benchmarks/toolbench/suite.py) runs telos/chatml backends against `CachedToolEnv` via `registry_from_env`. CLI:
+ToolBench driver: `ToolBenchSuite` in [`toolbench/suite.py`](../src/telos/evaluation/benchmarks/toolbench/suite.py) runs telos/chatml backends against `CachedToolEnv` via `registry_from_env`. CLI:
 
 ```bash
 telos eval-benchmarks --suite toolbench --format telos --model <hf_id> --num-examples 3
 ```
 
-ToolBench scoring (3.4): [`toolbench/convert.py`](../src/telos/evaluation/benchmarks/toolbench/convert.py) converts result traces to upstream tooleval `answer_details` format. [`toolbench/score.py`](../src/telos/evaluation/benchmarks/toolbench/score.py) applies structural pass-rate checks aligned with `eval_pass_rate.py` (Finish in final step, no tool hallucination, non-empty final answer). Converted answers are written under `results/benchmarks/score/<model>/G1_instruction.json`. Optional full GPT judge: set `OPENAI_API_KEY` and `TOOLEVAL_GPT=1`.
+ToolBench scoring: [`toolbench/convert.py`](../src/telos/evaluation/benchmarks/toolbench/convert.py) converts result traces to upstream tooleval `answer_details` format. [`toolbench/score.py`](../src/telos/evaluation/benchmarks/toolbench/score.py) applies structural pass-rate checks aligned with `eval_pass_rate.py` (Finish in final step, no tool hallucination, non-empty final answer). Converted answers are written under `results/benchmarks/score/<model>/G1_instruction.json`. Optional full GPT judge: set `OPENAI_API_KEY` and `TOOLEVAL_GPT=1`.
+
+SWE-bench-Lite subset: `SUBSET_IDS` in [`swe/subset.py`](../src/telos/evaluation/benchmarks/swe/subset.py) (30 instances, seed 42 from `SWE-Bench_Lite` / `test`). Drivers: [`swe/telos.py`](../src/telos/evaluation/benchmarks/swe/telos.py), [`swe/chatml.py`](../src/telos/evaluation/benchmarks/swe/chatml.py); wire layer: [`swe/prelude.py`](../src/telos/evaluation/benchmarks/swe/prelude.py), [`swe/registry.py`](../src/telos/evaluation/benchmarks/swe/registry.py), [`swe/loop.py`](../src/telos/evaluation/benchmarks/swe/loop.py). Ops: [`eval_swe_bench.md`](eval_swe_bench.md).
 
 Related (reference only):
 

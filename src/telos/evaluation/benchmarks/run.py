@@ -9,6 +9,7 @@ from typing import Any, Callable, Optional
 from telos.evaluation.benchmarks.bfcl.suite import BFCLSuite
 from telos.evaluation.benchmarks.format_validity.evaluate import print_summary
 from telos.evaluation.benchmarks.format_validity.suite import FormatValiditySuite
+from telos.evaluation.benchmarks.swe.suite import SWEBenchLiteSuite
 from telos.evaluation.benchmarks.toolbench.suite import ToolBenchSuite
 from telos.evaluation.benchmarks.suite import BenchmarkSuite, RunContext
 from telos.evaluation.harness.task import BenchmarkResult
@@ -22,9 +23,10 @@ class _SuiteConfig:
 
 
 SUITES: dict[str, _SuiteConfig] = {
-    "bfcl": _SuiteConfig(BFCLSuite, 512, None),
+    "bfcl": _SuiteConfig(BFCLSuite, 1024, None),
     "format_validity": _SuiteConfig(FormatValiditySuite, 1024, 100),
     "toolbench": _SuiteConfig(ToolBenchSuite, 1024, None),
+    "swe": _SuiteConfig(SWEBenchLiteSuite, 1024, None),
 }
 
 
@@ -39,6 +41,7 @@ def run_suite(
     adapter_mode: str = "merged",
     adapter_id: Optional[str] = None,
     max_new_tokens: Optional[int] = None,
+    max_iterations: Optional[int] = None,
     inject_retry_failure: bool = False,
     run_inference: bool = True,
     run_score: bool = True,
@@ -52,13 +55,14 @@ def run_suite(
         adapter_id=adapter_id,
         max_new_tokens=max_new_tokens or cfg.default_max_new_tokens,
         inject_retry_failure=inject_retry_failure,
+        max_iterations=max_iterations,
     )
     run_kw: dict[str, Any] = {
         "output_dir": output_dir,
         "num_examples": cfg.default_num_examples if num_examples is None else num_examples,
         "sample_seed": sample_seed,
     }
-    if name == "bfcl":
+    if name in ("bfcl", "swe"):
         run_kw.update(run_inference=run_inference, run_score=run_score, score_dir=score_dir)
     result = cfg.factory().run(ctx, **run_kw)
     if name == "format_validity":
@@ -76,3 +80,7 @@ def run_format_validity_suite(model_id: str, fmt: str, **kwargs: Any) -> Benchma
 
 def run_toolbench_suite(model_id: str, fmt: str, **kwargs: Any) -> BenchmarkResult:
     return run_suite("toolbench", model_id, fmt, **kwargs)
+
+
+def run_swe_suite(model_id: str, fmt: str, **kwargs: Any) -> BenchmarkResult:
+    return run_suite("swe", model_id, fmt, **kwargs)

@@ -61,11 +61,12 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src", "third_party/ToolBench"]
+pythonpath = ["src", "third_party/ToolBench", "third_party/mini-swe-agent/src"]
 
 [tool.pyright]
 extraPaths = [
     "third_party/gorilla/berkeley-function-call-leaderboard",
     "third_party/ToolBench",
     "third_party/ToolBench/toolbench/tooleval",
+    "third_party/mini-swe-agent/src",
 ]

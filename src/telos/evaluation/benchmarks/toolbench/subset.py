@@ -1,4 +1,4 @@
-"""load pinned toolbench G1_instruction subset (3.1)."""
+"""load pinned toolbench G1_instruction subset."""
 
 from __future__ import annotations
 

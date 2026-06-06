@@ -81,6 +81,28 @@ telos train-chatml-lora \
   --merged-repo-id kosiasuzu/chatml-llama3.1-8b-lora-merged
 
 
+# --- eval setup (benchmark dependencies) ---
+# from repo root; see docs/eval_dependencies.md
+pip install -e ".[eval]"
+
+git submodule update --init --recursive
+
+pip install -e ".[eval-benchmarks]"
+
+# toolbench data: unzip into third_party/ToolBench/data/ (test_instruction, toolenv, tool_response_cache, ...)
+# hf mirror (preferred); requires huggingface-cli login if the dataset is gated
+cd third_party/ToolBench
+huggingface-cli download nullwwg/toolbench-data data.zip --local-dir .
+unzip -o data.zip
+cd ../..
+
+# toolbench data (upstream google drive alternative)
+# cd third_party/ToolBench
+# wget --no-check-certificate 'https://drive.google.com/uc?export=download&id=1XFjDxVZdUY7TXYF2yvzx3pJlS2fy78jk&confirm=yes' -O data.zip
+# unzip -o data.zip
+# cd ../..
+
+
 # --- format validity eval: telos ---
 # default 100 eval rows (--num-examples -1 for all evaluable rows in the split)
 # uses TelosTokenizer encode/decode (reserved ids); re-run if you had old raw-AutoTokenizer telos metrics
@@ -122,7 +144,7 @@ telos eval-benchmarks \
 
 
 # --- toolbench upstream subset (cached tool env) ---
-# requires: git submodule update --init third_party/ToolBench && data.zip under third_party/ToolBench/data/
+# requires: eval setup above (submodules + toolbench data.zip)
 telos eval-benchmarks \
   --suite toolbench \
   --format telos \
@@ -149,3 +171,68 @@ telos eval-benchmarks \
 
 # optional full upstream gpt judge (requires OPENAI_API_KEY)
 # TOOLEVAL_GPT=1 telos eval-benchmarks --suite toolbench ...
+
+
+# --- swe-bench-lite ---
+# ops: docs/eval_swe_bench.md
+# requires: docker + containerd running, git submodule update --init third_party/mini-swe-agent third_party/SWE-bench
+# pre-pull eval images (first pull can take 10-30+ min; eval times out at ~600s otherwise)
+python -c "
+from telos.evaluation.benchmarks.swe.env import pull_instance_image
+from telos.evaluation.benchmarks.swe.subset import load_entries
+for e in load_entries(2, seed=42):
+    print('pulling', e['instance_id'])
+    pull_instance_image(e)
+"
+# smoke: low iteration cap; stops early on 3x identical bash (repeated_command)
+SWE_VERBOSE=1 telos eval-benchmarks \
+  --suite swe \
+  --format telos \
+  --model kosiasuzu/telos-llama3.1-8b-lora-merged \
+  --num-examples 2 \
+  --max-iterations 50 \
+  --no-score \
+  --output-dir results/benchmarks/swe
+
+telos eval-benchmarks \
+  --suite swe \
+  --format telos \
+  --model kosiasuzu/telos-llama3.1-8b-lora-merged \
+  --num-examples 3 \
+  --output-dir results/benchmarks/swe
+
+telos eval-benchmarks \
+  --suite swe \
+  --format chatml \
+  --model kosiasuzu/chatml-llama3.1-8b-lora-merged \
+  --num-examples 3 \
+  --output-dir results/benchmarks/swe
+
+
+# --- benchmark matrix (telos + chatml × all suites) ---
+# requires: eval setup above
+# models: kosiasuzu/telos-llama3.1-8b-lora-merged (telos), kosiasuzu/chatml-llama3.1-8b-lora-merged (chatml)
+# output: results/benchmarks/<suite>/<format>/summary.json (8 runs by default)
+
+# preview the 8-run matrix without loading models
+telos eval-run-all --dry-run
+
+# smoke: 3 examples per suite, skip swe docker grader paths (inference only on bfcl/swe)
+telos eval-run-all \
+  --num-examples 3 \
+  --no-score \
+  --suites bfcl toolbench format_validity swe
+
+# smoke without swe (no docker)
+telos eval-run-all \
+  --num-examples 3 \
+  --suites bfcl toolbench format_validity
+
+# full published matrix: bfcl + toolbench + swe + format_validity × telos + chatml
+# long run: gpu for inference; docker for swe grading; see docs/eval_dependencies.md
+telos eval-run-all --continue-on-error
+
+# re-grade bfcl/swe from existing result rows (no inference)
+telos eval-run-all \
+  --score-only \
+  --suites bfcl swe

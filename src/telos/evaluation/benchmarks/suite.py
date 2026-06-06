@@ -24,6 +24,7 @@ class RunContext:
     adapter_id: Optional[str] = None
     max_new_tokens: int = 512
     inject_retry_failure: bool = False
+    max_iterations: Optional[int] = None
 
 
 @dataclass
@@ -131,7 +132,7 @@ class BenchmarkSuite(ABC):
         bench_out = base / ctx.format
 
         print(
-            f"{self.name} plan: {len(entries)} examples"
+            f"{self.name} run: {len(entries)} examples"
             + (f", dataset={self.dataset_label(dataset)}" if dataset else "")
         )
 

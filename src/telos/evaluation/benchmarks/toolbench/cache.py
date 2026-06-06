@@ -1,4 +1,4 @@
-"""cache-only tool execution for toolbench (3.2)."""
+"""cache-only tool execution for toolbench."""
 
 from __future__ import annotations
 
@@ -377,7 +377,7 @@ def execute_tool_call(
     rapidapi_key: str = "",
     use_cache: bool = True,
 ) -> tuple[str, int]:
-    """one-shot step helper for tests and the 3.3 driver."""
+    """one-shot step helper for tests and the toolbench driver."""
     env = CachedToolEnv(
         entry,
         data_root=data_root,
