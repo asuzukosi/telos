@@ -1,6 +1,6 @@
-"""tests for telos.validators and the sanitize helper."""
-from telos.constants import FrameType
-from telos.frames import (
+"""tests for agenticml.validators and the sanitize helper."""
+from agenticml.constants import FrameType
+from agenticml.frames import (
     action,
     belief,
     feedback,
@@ -12,7 +12,7 @@ from telos.frames import (
     reward,
     sanitize,
 )
-from telos.validators import Violation, is_valid, validate
+from agenticml.validators import Violation, is_valid, validate
 
 
 def test_sanitize_strips_known_markers():
