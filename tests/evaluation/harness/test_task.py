@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from telos.evaluation.harness.task import BenchmarkResult, BenchmarkRunMeta, EvalTask, TaskResult, TaskTiming, TaskTokens
+from agenticml.evaluation.harness.task import BenchmarkResult, BenchmarkRunMeta, EvalTask, TaskResult, TaskTiming, TaskTokens
 
 
 def test_eval_task_from_row():
@@ -17,7 +17,7 @@ def test_eval_task_from_row():
 
 def test_benchmark_result_json():
     br = BenchmarkResult(
-        meta=BenchmarkRunMeta("fmt", "m", "telos", "merged", "ds", "eval", 1),
+        meta=BenchmarkRunMeta("fmt", "m", "agenticml", "merged", "ds", "eval", 1),
         metrics={"n": 1},
         tasks=[TaskResult("a", "d", True, tokens=TaskTokens(total_tokens=10))],
     )

@@ -2,14 +2,9 @@ from __future__ import annotations
 
 import argparse
 
-from telos.evaluation.benchmarks.run import SUITES
-from telos.evaluation.benchmarks.run_all import (
-    DEFAULT_CHATML_MODEL,
-    DEFAULT_TELLOS_MODEL,
-    MATRIX_FORMATS,
-    MATRIX_SUITES,
-    run_matrix,
-)
+from agenticml.constants import DEFAULT_AGENTICML_MERGED_MODEL, DEFAULT_CHATML_MERGED_MODEL
+from agenticml.evaluation.benchmarks.run import SUITES
+from agenticml.evaluation.benchmarks.run_all import MATRIX_FORMATS, MATRIX_SUITES, run_matrix
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -29,8 +24,8 @@ def main(argv: list[str] | None = None) -> None:
         choices=list(MATRIX_FORMATS),
         default=None,
     )
-    p.add_argument("--telos-model", default=DEFAULT_TELLOS_MODEL)
-    p.add_argument("--chatml-model", default=DEFAULT_CHATML_MODEL)
+    p.add_argument("--agenticml-model", default=DEFAULT_AGENTICML_MERGED_MODEL)
+    p.add_argument("--chatml-model", default=DEFAULT_CHATML_MERGED_MODEL)
     p.add_argument("--num-examples", type=int, default=None)
     p.add_argument("--sample-seed", type=int, default=42)
     p.add_argument("--max-new-tokens", type=int, default=None)
@@ -46,7 +41,7 @@ def main(argv: list[str] | None = None) -> None:
     run_matrix(
         suites=args.suites,
         formats=args.formats,
-        models={"telos": args.telos_model, "chatml": args.chatml_model},
+        models={"agenticml": args.agenticml_model, "chatml": args.chatml_model},
         num_examples=args.num_examples,
         sample_seed=args.sample_seed,
         max_new_tokens=args.max_new_tokens,

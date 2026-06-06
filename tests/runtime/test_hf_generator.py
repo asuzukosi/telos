@@ -5,11 +5,12 @@ from unittest.mock import MagicMock
 
 import pytest
 import torch
+from transformers import AutoTokenizer, PreTrainedTokenizerBase
 
-from telos.constants import DEFAULT_BASE_MODEL
-from telos.evaluation.harness.load import causal_lm_load_kwargs
-from telos.runtime.hf_generator import HfGenerator
-from telos.tokenizer import TelosTokenizer
+from agenticml.constants import DEFAULT_BASE_MODEL, END_MARKER_TOKEN_ID
+from agenticml.evaluation.harness.load import as_causal_lm, causal_lm_load_kwargs
+from agenticml.runtime.hf_generator import HfGenerator
+from agenticml.tokenizer_helpers import agenticml_stop_token_ids, chat_template_ids, pad_token_id
 
 
 pytestmark = pytest.mark.skipif(
@@ -18,35 +19,52 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _pad_id(tt: TelosTokenizer) -> int:
-    hf = tt.hf
-    return hf.pad_token_id if hf.pad_token_id is not None else hf.eos_token_id
+def _prelude_input_ids(
+    tokenizer: PreTrainedTokenizerBase,
+    *,
+    goal: str,
+    mission: str,
+) -> list[int]:
+    return chat_template_ids(
+        tokenizer,
+        [
+            {"type": "goal", "content": goal},
+            {"type": "mission", "content": mission},
+        ],
+        add_generation_prompt=False,
+        add_special_tokens=False,
+    )
 
 
-def _stop_ids(tt: TelosTokenizer) -> list[int]:
-    ids = [tt.end_id]
-    eos = tt.hf.eos_token_id
-    if eos is not None and eos not in ids:
-        ids.append(eos)
-    return ids
+def _require_init_model() -> None:
+    try:
+        AutoTokenizer.from_pretrained(DEFAULT_BASE_MODEL)
+    except OSError as e:
+        pytest.skip(f"init model not on hub yet: {e}")
 
 
 @pytest.fixture(scope="module")
-def tt() -> TelosTokenizer:
-    return TelosTokenizer.from_pretrained(DEFAULT_BASE_MODEL)
+def tokenizer() -> PreTrainedTokenizerBase:
+    _require_init_model()
+    return AutoTokenizer.from_pretrained(DEFAULT_BASE_MODEL)
 
 
 @pytest.fixture(scope="module")
 def gen() -> HfGenerator:
+    _require_init_model()
     return HfGenerator.from_pretrained(DEFAULT_BASE_MODEL, dtype=torch.bfloat16)
 
 
-def test_hf_generator_returns_suffix_only(tt: TelosTokenizer, gen: HfGenerator):
-    prompt_ids = tt.encode("<|goal|>You are concise.<|mission|>Say hi.")
+def test_hf_generator_returns_suffix_only(tokenizer: PreTrainedTokenizerBase, gen: HfGenerator):
+    prompt_ids = _prelude_input_ids(
+        tokenizer,
+        goal="You are concise.",
+        mission="Say hi.",
+    )
     out = gen.generate(
         prompt_ids,
-        pad_token_id=_pad_id(tt),
-        eos_token_id=_stop_ids(tt),
+        pad_token_id=pad_token_id(tokenizer),
+        eos_token_id=agenticml_stop_token_ids(tokenizer),
         max_new_tokens=24,
     )
     assert isinstance(out, list)
@@ -54,21 +72,25 @@ def test_hf_generator_returns_suffix_only(tt: TelosTokenizer, gen: HfGenerator):
     assert out != prompt_ids
 
 
-def test_hf_generator_respects_max_new_tokens(tt: TelosTokenizer, gen: HfGenerator):
-    prompt_ids = tt.encode("<|goal|>test<|mission|>test")
+def test_hf_generator_respects_max_new_tokens(tokenizer: PreTrainedTokenizerBase, gen: HfGenerator):
+    prompt_ids = _prelude_input_ids(tokenizer, goal="test", mission="test")
     out = gen.generate(
         prompt_ids,
-        pad_token_id=_pad_id(tt),
-        eos_token_id=tt.end_id,
+        pad_token_id=pad_token_id(tokenizer),
+        eos_token_id=END_MARKER_TOKEN_ID,
         max_new_tokens=8,
     )
     assert len(out) <= 8
 
 
-def test_hf_generator_emits_attention_mask(monkeypatch, tt: TelosTokenizer, gen: HfGenerator):
-    captured = {}
+def test_hf_generator_emits_attention_mask(
+    monkeypatch,
+    tokenizer: PreTrainedTokenizerBase,
+    gen: HfGenerator,
+):
+    captured: dict = {}
 
-    original_generate = gen.model.generate
+    original_generate = as_causal_lm(gen.model).generate
 
     def wrapped_generate(*args, **kwargs):
         captured["attention_mask"] = kwargs.get("attention_mask")
@@ -77,10 +99,10 @@ def test_hf_generator_emits_attention_mask(monkeypatch, tt: TelosTokenizer, gen:
         return original_generate(*args, **kwargs)
 
     monkeypatch.setattr(gen.model, "generate", wrapped_generate)
-    pad = _pad_id(tt)
-    stops = _stop_ids(tt)
+    pad = pad_token_id(tokenizer)
+    stops = agenticml_stop_token_ids(tokenizer)
     _ = gen.generate(
-        tt.encode("<|goal|>x<|mission|>y"),
+        _prelude_input_ids(tokenizer, goal="x", mission="y"),
         pad_token_id=pad,
         eos_token_id=stops,
         max_new_tokens=4,
@@ -95,14 +117,13 @@ def test_hf_generator_emits_attention_mask(monkeypatch, tt: TelosTokenizer, gen:
 def test_from_pretrained_uses_shared_load_kwargs(monkeypatch):
     seen: dict = {}
 
-    def fake_load_model(model_id, adapter_mode, adapter_id=None, dtype=torch.bfloat16):
+    def fake_load_model(model_id, dtype=torch.bfloat16):
         seen["model_id"] = model_id
-        seen["adapter_mode"] = adapter_mode
         seen["load_kw"] = causal_lm_load_kwargs(dtype)
         return MagicMock()
 
     monkeypatch.setattr(
-        "telos.runtime.hf_generator.load_model",
+        "agenticml.runtime.hf_generator.load_model",
         fake_load_model,
     )
     HfGenerator.from_pretrained("test-model", dtype=torch.float16)

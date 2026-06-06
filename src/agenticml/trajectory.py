@@ -1,48 +1,41 @@
 """
-trajectory:: an ordered, mutable container of telos frames
+trajectory:: an ordered, mutable container of agenticml frames
 """
 from __future__ import annotations
-from typing import Any, Iterable, Union
-from telos.constants import FrameType, END_MARKER
-from telos.frames import Frame
+from collections.abc import Sequence
+from typing import Any, Iterable, Union, overload
+from agenticml.constants import FrameType
+from agenticml.frames import Frame
 
 FrameLike = Union[Frame, dict[str, Any]]
 
 def _frame_from_dict(d: dict[str, Any]) -> Frame:
-    """ convert a public-api dict a frame object. """
     if "type" not in d:
         raise ValueError(f"frame dict missing 'type' key: {d}")
     type_str = d["type"]
     if not type_str.startswith("<|"):
         type_str = "<|" + type_str + "|>"
-    if type_str == END_MARKER:
-        raise ValueError(
-            f"{END_MARKER} is not a stored frame; it is injected on render and stripped on parse"
-        )
     try:
         ft = FrameType(type_str)
     except ValueError as e:
         raise ValueError(f"unknown frame type: {type_str}") from e
-    return Frame(type=ft, content=d.get("content", None))
+    return Frame(type=ft, content=d.get("content"))
 
 def _frame_to_dict(f: Frame) -> dict:
-    """Convert a Frame to a public-API dict.
- 
-    The full marker (``<|goal|>``) is stripped to the short name
-    (``goal``) for friendlier external representations.
-    """
-    short_name = f.type.value[2:-2]
-    return {"type": short_name, "content": f.content}
+    return {"type": f.type.value[2:-2], "content": f.content}
 
 def _coerce_frame(item: FrameLike) -> Frame:
-    """convert a frame-like object to a frame object."""
     if isinstance(item, Frame):
         return item
     return _frame_from_dict(item)
 
 
-class Trajectory:
-    """an ordered, mutable sequence of Telos frames."""
+def _coerce_frames(items: Iterable[FrameLike]) -> list[Frame]:
+    return [_coerce_frame(f) for f in items]
+
+
+class Trajectory(Sequence[Frame]):
+    """an ordered, mutable sequence of AgenticML frames."""
  
     __slots__ = ("_frames",)
  
@@ -55,24 +48,35 @@ class Trajectory:
         elif isinstance(frames, Trajectory):
             self._frames = list(frames._frames)
         else:
-            self._frames = [_coerce_frame(f) for f in frames]
+            self._frames = _coerce_frames(frames)
+
+    @classmethod
+    def _from_frames(cls, frames: list[Frame]) -> "Trajectory":
+        out = cls.__new__(cls)
+        out._frames = frames
+        return out
 
     def to_dict(self) -> list[dict]:
-        """a list of frame dicts suitable for JSON serialization."""
         return [_frame_to_dict(f) for f in self._frames]
  
     def to_frames(self) -> list[Frame]:
-        """a fresh list of the underlying Frame objects."""
         return list(self._frames)
 
     def __len__(self) -> int:
-        """the number of frames in the trajectory."""
         return len(self._frames)
 
-    def __getitem__(self, index: Union[int, slice]) -> Union[Frame, Trajectory]:
-        """the frame at the given index."""
+    def __iter__(self):
+        return iter(self._frames)
+
+    @overload
+    def __getitem__(self, index: int) -> Frame: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> "Trajectory": ...
+
+    def __getitem__(self, index: Union[int, slice]) -> Union[Frame, "Trajectory"]:
         if isinstance(index, slice):
-            return Trajectory(self._frames[index])
+            return Trajectory._from_frames(self._frames[index])
         return self._frames[index]
 
     def __contains__(self, item) -> bool:
@@ -82,31 +86,24 @@ class Trajectory:
         return bool(self._frames)
 
     def append(self, item: FrameLike) -> None:
-        """append a Frame or a frame-dict to the trajectory."""
         self._frames.append(_coerce_frame(item))
  
     def extend(self, items: Iterable[FrameLike]) -> None:
-        """append multiple frames or frame-dicts."""
-        for item in items:
-            self.append(item)
+        self._frames.extend(_coerce_frames(items))
 
     def __add__(self, other) -> "Trajectory":
-        """concatenate with another Trajectory, list, or single frame.
-        returns a new Trajectory; does not mutate self.
-        """
-        new = Trajectory(self)
+        frames = list(self._frames)
         if isinstance(other, Trajectory):
-            new._frames.extend(other._frames)
+            frames.extend(other._frames)
         elif isinstance(other, Frame) or isinstance(other, dict):
-            new._frames.append(_coerce_frame(other))
+            frames.append(_coerce_frame(other))
         elif isinstance(other, list):
-            new._frames.extend(_coerce_frame(f) for f in other)
+            frames.extend(_coerce_frames(other))
         else:
             return NotImplemented
-        return new
+        return Trajectory._from_frames(frames)
  
     def __radd__(self, other) -> "Trajectory":
-        """allow `list_of_frames + trajectory` and `frame + trajectory`."""
         if isinstance(other, Frame) or isinstance(other, dict):
             return Trajectory([other]) + self
         if isinstance(other, list):
@@ -114,23 +111,20 @@ class Trajectory:
         return NotImplemented
  
     def __iadd__(self, other) -> "Trajectory":
-        """in-place addition via `trajectory += other`."""
         if isinstance(other, Trajectory):
             self._frames.extend(other._frames)
         elif isinstance(other, Frame) or isinstance(other, dict):
             self._frames.append(_coerce_frame(other))
         elif isinstance(other, list):
-            self._frames.extend(_coerce_frame(f) for f in other)
+            self._frames.extend(_coerce_frames(other))
         else:
             return NotImplemented
         return self
     
     def __eq__(self, other) -> bool:
-        """equality comparison."""
         if isinstance(other, Trajectory):
             return self._frames == other._frames
         return NotImplemented
  
     def __repr__(self) -> str:
-        """a string representation of the trajectory."""
         return f"Trajectory({self._frames!r})"

@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from telos.evaluation.benchmarks.suite import RunContext
-from telos.evaluation.benchmarks.swe.io import load_result_rows, write_results
-from telos.evaluation.benchmarks.swe.suite import SWEBenchLiteSuite
+from agenticml.evaluation.benchmarks.suite import RunContext
+from agenticml.evaluation.benchmarks.swe.io import load_result_rows, write_results
+from agenticml.evaluation.benchmarks.swe.suite import SWEBenchLiteSuite
 
 
 def _row(instance_id: str = "django__django-11099", *, patch: str = "--- a/x.py\n") -> dict:
@@ -26,7 +26,7 @@ def test_load_entries_adds_id():
 
 def test_persist_and_load_result_rows(tmp_path: Path):
     suite = SWEBenchLiteSuite()
-    ctx = RunContext(model_id="org/model", format="telos")
+    ctx = RunContext(model_id="org/model", format="agenticml")
     row = _row()
     suite.persist_task_result(tmp_path, ctx, row)
     loaded = suite.load_result_rows(tmp_path, ctx, [{"instance_id": "django__django-11099"}])
@@ -37,10 +37,10 @@ def test_persist_and_load_result_rows(tmp_path: Path):
 def test_score_and_task_results(tmp_path: Path, monkeypatch):
     suite = SWEBenchLiteSuite()
     rows = [_row(), _row(instance_id="sympy__sympy-12454")]
-    ctx = RunContext(model_id="org/model", format="telos")
+    ctx = RunContext(model_id="org/model", format="agenticml")
 
     def _fake_score(model_id, rows, *, score_dir, run_id, **kwargs):
-        from telos.evaluation.benchmarks.suite import SuiteScore
+        from agenticml.evaluation.benchmarks.suite import SuiteScore
 
         del model_id, score_dir, run_id, kwargs
         return SuiteScore(
@@ -51,7 +51,7 @@ def test_score_and_task_results(tmp_path: Path, monkeypatch):
             },
         )
 
-    monkeypatch.setattr("telos.evaluation.benchmarks.swe.suite.score", _fake_score)
+    monkeypatch.setattr("agenticml.evaluation.benchmarks.swe.suite.score", _fake_score)
     sc = suite.score(Path("."), ctx, [], rows)
     assert sc.primary == 0.5
     tasks = suite.rows_to_task_results(rows, sc)

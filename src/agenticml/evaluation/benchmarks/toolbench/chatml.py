@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from telos.evaluation.benchmarks.suite import RunContext
-from telos.evaluation.benchmarks.toolbench.cache import CachedToolEnv
-from telos.evaluation.benchmarks.toolbench.convert import trace_messages
-from telos.evaluation.benchmarks.toolbench.io import result_row
-from telos.evaluation.benchmarks.toolbench.registry import registry_from_env
-from telos.evaluation.harness.backends.chatml_backend import ChatMLBackend
+from agenticml.evaluation.benchmarks.suite import RunContext
+from agenticml.evaluation.benchmarks.toolbench.cache import CachedToolEnv
+from agenticml.evaluation.benchmarks.toolbench.convert import trace_messages
+from agenticml.evaluation.benchmarks.toolbench.io import result_row
+from agenticml.evaluation.benchmarks.toolbench.registry import registry_from_env
+from agenticml.evaluation.harness.backends.chatml_backend import ChatMLBackend
 
 MAX_ITERATIONS = 12
 

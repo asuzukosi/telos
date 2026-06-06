@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 import torch
 
-from telos.runtime.hf_generator import HfGenerator
+from agenticml.runtime.hf_generator import HfGenerator
 
 
 def test_generate_separate_pad_and_eos(monkeypatch):
@@ -13,7 +13,7 @@ def test_generate_separate_pad_and_eos(monkeypatch):
     model = MagicMock()
     model.parameters.return_value = iter([param])
     monkeypatch.setattr(
-        "telos.runtime.hf_generator.model_device",
+        "agenticml.runtime.hf_generator.model_device",
         lambda _m: torch.device("cpu"),
     )
     def capture_generate(*_a, **k):
@@ -42,7 +42,7 @@ def test_generate_return_full_sequence(monkeypatch):
     model.parameters.return_value = iter([param])
     model.generate.return_value = torch.tensor([[10, 20, 30, 40]])
     monkeypatch.setattr(
-        "telos.runtime.hf_generator.model_device",
+        "agenticml.runtime.hf_generator.model_device",
         lambda _m: torch.device("cpu"),
     )
 

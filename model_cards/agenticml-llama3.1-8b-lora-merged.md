@@ -1,19 +1,19 @@
 ---
 library_name: transformers
 license: llama3.1
-base_model: kosiasuzu/telos-agent-llama-3.1-8b-init
+base_model: kosiasuzu/agenticml-agent-llama-3.1-8b-init
 tags:
   - llama-3.1
-  - telos
+  - agenticml
   - lora
   - agent
   - tool-use
 pipeline_tag: text-generation
 ---
 
-# kosiasuzu/telos-llama3.1-8b-lora-merged
+# kosiasuzu/agenticml-llama3.1-8b-lora-merged
 
-**Telos-format** agent model: Llama 3.1 8B with Telos frame markers on reserved vocabulary slots, LoRA-fine-tuned on agent trajectories, then **merged** into dense weights for single-checkpoint inference.
+**AgenticML-format** agent model: Llama 3.1 8B with AgenticML frame markers on reserved vocabulary slots, LoRA-fine-tuned on agent trajectories, then **merged** into dense weights for single-checkpoint inference.
 
 Paired ChatML baseline for the same study: [`kosiasuzu/chatml-llama3.1-8b-lora-merged`](https://huggingface.co/kosiasuzu/chatml-llama3.1-8b-lora-merged).
 
@@ -21,39 +21,39 @@ Paired ChatML baseline for the same study: [`kosiasuzu/chatml-llama3.1-8b-lora-m
 
 ### Model Description
 
-- **Model ID:** `kosiasuzu/telos-llama3.1-8b-lora-merged`
-- **Developed by:** Telos project / kosiasuzu
+- **Model ID:** `kosiasuzu/agenticml-llama3.1-8b-lora-merged`
+- **Developed by:** AgenticML project / kosiasuzu
 - **Model type:** Causal language model (Llama 3.1 8B), **PEFT LoRA merged** into dense weights
 - **Language(s):** English (primary)
 - **License:** [Llama 3.1 Community License](https://llama.meta.com/llama3_1/license/)
-- **Finetuned from:** [`kosiasuzu/telos-agent-llama-3.1-8b-init`](https://huggingface.co/kosiasuzu/telos-agent-llama-3.1-8b-init)
-- **Adapter (pre-merge):** [`kosiasuzu/telos-llama3.1-8b-lora-adapter`](https://huggingface.co/kosiasuzu/telos-llama3.1-8b-lora-adapter)
+- **Finetuned from:** [`kosiasuzu/agenticml-agent-llama-3.1-8b-init`](https://huggingface.co/kosiasuzu/agenticml-agent-llama-3.1-8b-init)
 
-**Init base (`telos-agent-llama-3.1-8b-init`):** `meta-llama/Llama-3.1-8B` with Telos marker rows (`<|goal|>` … `<|reward|>`) initialized in `embed_tokens` / `lm_head` via mean-pooled seed embeddings (`telos init-telos-embeddings`).
+**Init base (`agenticml-agent-llama-3.1-8b-init`):** `meta-llama/Llama-3.1-8B` with AgenticML marker rows (`<|goal|>` … `<|reward|>`) initialized in `embed_tokens` / `lm_head` via mean-pooled seed embeddings (`agenticml init-embeddings --format agenticml`).
 
-**Training target:** supervised next-token prediction on the **`frames`** column (Telos frame sequences). Loss applies only inside **model-owned** blocks (`belief`, `plan`, `think`, `action`, `end`); runtime frames (`goal`, `mission`, `obs`, `result`, etc.) are masked.
+**Training target:** supervised next-token prediction on the **`frames`** column (AgenticML frame sequences). Loss applies only inside **model-owned** blocks (`belief`, `plan`, `think`, `action`, `end`); runtime frames (`goal`, `mission`, `obs`, `result`, etc.) are masked.
 
 ### Model Sources
 
-- **Telos repository:** https://github.com/kosiasuzu/talos
-- **Dataset:** [`kosiasuzu/telos-agent-trajectory-dataset`](https://huggingface.co/datasets/kosiasuzu/telos-agent-trajectory-dataset)
+- **AgenticML repository:** https://github.com/kosiasuzu/agenticml
+- **Dataset:** [`kosiasuzu/agenticml-agent-trajectory-dataset`](https://huggingface.co/datasets/kosiasuzu/agenticml-agent-trajectory-dataset)
 - **Paired ChatML merged model:** [`kosiasuzu/chatml-llama3.1-8b-lora-merged`](https://huggingface.co/kosiasuzu/chatml-llama3.1-8b-lora-merged)
 
 ## Uses
 
 ### Direct Use
 
-- Continue **Telos** agent trajectories: typed frames (`goal`, `mission`, `obs`, `belief`, `plan`, `think`, `action`, `result`, …) rendered with Telos markers.
+- Continue **AgenticML** agent trajectories: typed frames (`goal`, `mission`, `obs`, `belief`, `plan`, `think`, `action`, `result`, …) rendered with AgenticML markers.
 - Research on agent-native serialization vs ChatML on **matched** training data.
 
 ### Downstream Use
 
-- Load with `TelosTokenizer` + `transformers` generation on rendered prelude text.
-- Evaluate with `telos eval-benchmarks --suite format_validity --format telos`.
+- Load with `AutoTokenizer.from_pretrained` + `apply_chat_template(trajectory.to_dict(), ...)`.
+- Advance trajectories with `agenticml.sdk.step`; inject tool schemas via `with_tool_obs`.
+- Evaluate with `agenticml eval-benchmarks --suite format_validity --format agenticml`.
 
 ### Out-of-Scope Use
 
-- Not a drop-in replacement for Meta Instruct or generic chat APIs without Telos rendering.
+- Not a drop-in replacement for Meta Instruct or generic chat APIs without AgenticML rendering.
 - Simulated tool trajectories only; deploy with your own tool runtime and safety checks.
 - High-stakes autonomous actions without human oversight.
 
@@ -65,24 +65,39 @@ Paired ChatML baseline for the same study: [`kosiasuzu/chatml-llama3.1-8b-lora-m
 
 ### Recommendations
 
-- Parse and validate generations with `telos.frames.parse` and `telos.validators.validate`.
+- Parse generations with `parse_reserved_wire` and validate with `agenticml.validators.validate`.
 - Compare against the ChatML merged model on the same `eval` split.
 - Report metrics by `domain`.
+
+## Same task, ChatML baseline (side-by-side)
+
+Paired checkpoint: [`kosiasuzu/chatml-llama3.1-8b-lora-merged`](https://huggingface.co/kosiasuzu/chatml-llama3.1-8b-lora-merged). Same dataset and training recipe; only serialization differs.
+
+**Task:** read `main.py`, return line count.
+
+| AgenticML (this model) | ChatML (baseline) |
+|------------------------|-------------------|
+| `<\|goal\|>You are a coding assistant.` | `{"role":"system","content":"You are a coding assistant...."}` |
+| `<\|mission\|>How many lines are in main.py?` | `{"role":"user","content":"How many lines are in main.py?"}` |
+| `<\|action\|>{"tool":"read_file","path":"main.py"}<\|end\|>` | assistant `tool_calls`: `read_file` + `{"path":"main.py"}` |
+| `<\|result\|>{"tool":"read_file","value":"..."}` | `{"role":"tool","content":"{\"tool\":\"read_file\",...}"}` |
+| `<\|action\|>{"tool":"answer","text":"main.py has 2 lines."}<\|end\|>` | `{"role":"assistant","content":"main.py has 2 lines."}` |
+
+ChatML tool-call generation uses `<\|python_tag\|>{...}<\|eom_id\|>`. Conversion: [`bridge.py`](../src/agenticml/bridge.py). Full pipeline: [`recipe.md`](../recipe.md).
 
 ## How to Get Started with the Model
 
 ```python
-import json
 import torch
-from transformers import AutoModelForCausalLM
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from telos.frames import parse, render
-from telos.trajectory import Trajectory
-from telos.tokenizer import TelosTokenizer
+from agenticml.agentic_template import parse_reserved_wire
+from agenticml.constants import END_MARKER_TOKEN_ID
+from agenticml.trajectory import Trajectory
 
-model_id = "kosiasuzu/telos-llama3.1-8b-lora-merged"
+model_id = "kosiasuzu/agenticml-llama3.1-8b-lora-merged"
 
-tt = TelosTokenizer.from_pretrained(model_id)
+tokenizer = AutoTokenizer.from_pretrained(model_id)
 model = AutoModelForCausalLM.from_pretrained(
     model_id,
     torch_dtype=torch.bfloat16,
@@ -90,69 +105,63 @@ model = AutoModelForCausalLM.from_pretrained(
 )
 model.eval()
 
-# example: continue from runtime prelude (before first model frame)
 frames = [
     {"type": "goal", "content": "You are a calculator assistant."},
     {"type": "mission", "content": "What is 17 * 23?"},
 ]
-prelude = Trajectory(frames).to_frames()
-prompt = render(prelude)
-
-# use TelosTokenizer.encode/decode — not tt.hf on wire text (see README gotcha)
-prompt_ids = tt.encode(prompt)
+prompt_ids = tokenizer.apply_chat_template(
+    Trajectory(frames).to_dict(),
+    tokenize=True,
+    add_generation_prompt=False,
+    add_special_tokens=False,
+)
 device = next(model.parameters()).device
 inputs = torch.tensor([prompt_ids], device=device, dtype=torch.long)
-end_id = tt.end_id
-pad_id = tt.hf.pad_token_id or tt.hf.eos_token_id
+pad_id = tokenizer.pad_token_id or tokenizer.eos_token_id
 with torch.no_grad():
     out = model.generate(
         inputs,
         attention_mask=torch.ones_like(inputs),
         max_new_tokens=512,
         do_sample=False,
-        eos_token_id=[end_id, tt.hf.eos_token_id],
+        eos_token_id=[END_MARKER_TOKEN_ID, tokenizer.eos_token_id],
         pad_token_id=pad_id,
     )
 
-gen_text = tt.decode(out[0][len(prompt_ids):].tolist())
-generated_frames = parse(gen_text, strict=False)
-print(generated_frames)
+gen_text = tokenizer.decode(out[0][len(prompt_ids):].tolist())
+print(parse_reserved_wire(gen_text, strict=False))
 ```
 
-**Telos CLI eval** (`pip install -e ".[eval]"`):
+**AgenticML CLI eval** (`pip install -e ".[eval]"`):
 
 ```bash
-telos eval-benchmarks --suite format_validity \
-  --format telos \
-  --model kosiasuzu/telos-llama3.1-8b-lora-merged \
-  --adapter-mode merged \
-  --dataset kosiasuzu/telos-agent-trajectory-dataset \
-  --split eval \
-  --output results/telos_format_validity_merged.json
+agenticml eval-benchmarks --suite format_validity \
+  --format agenticml \
+  --model kosiasuzu/agenticml-llama3.1-8b-lora-merged \
+  --output-dir results/benchmarks/format_validity
 ```
 
 ## Training Details
 
 ### Training Data
 
-- **Dataset:** `kosiasuzu/telos-agent-trajectory-dataset`
+- **Dataset:** `kosiasuzu/agenticml-agent-trajectory-dataset`
 - **Field used:** `frames` (JSON string per row)
-- **Tokenizer:** `TelosTokenizer` from the init checkpoint
+- **Tokenizer:** hub `AutoTokenizer` from the init checkpoint (baked chat template)
 
 ### Training Procedure
 
 ```bash
-torchrun --standalone --nproc_per_node=2 -m telos.cli.commands.train_telos_lora \
-  --model-id kosiasuzu/telos-agent-llama-3.1-8b-init \
-  --dataset kosiasuzu/telos-agent-trajectory-dataset \
-  --adapter-repo-id kosiasuzu/telos-llama3.1-8b-lora-adapter \
-  --merged-repo-id kosiasuzu/telos-llama3.1-8b-lora-merged
+torchrun --standalone --nproc_per_node=2 -m agenticml.cli.commands.train_on_format --format agenticml \
+  --model-id kosiasuzu/agenticml-agent-llama-3.1-8b-init \
+  --dataset kosiasuzu/agenticml-agent-trajectory-dataset \
+  --hub-repo-id kosiasuzu/agenticml-llama3.1-8b-lora-merged
 ```
 
 #### Preprocessing
 
-- `TelosTokenizer.apply_trajectory_template` on parsed `frames`.
-- Labels: train tokens in model blocks only (`mask_telos_runtime_labels`).
+- `tokenizer.apply_chat_template(frames, tokenize=True, ...)` on parsed `frames`.
+- Labels: train tokens in model blocks only (`mask_agenticml_runtime_labels`).
 - **`max_length=2048`** (CLI default).
 
 #### Training Hyperparameters
@@ -166,11 +175,11 @@ torchrun --standalone --nproc_per_node=2 -m telos.cli.commands.train_telos_lora 
 | **LR** | 2e-4, cosine, warmup 3% |
 | **Batch** | per-device 1 × grad accum 32 |
 | **Seed** | 42 |
-| **Multi-GPU** | FSDP (with `torchrun`) |
+| **Multi-GPU** | `torchrun` DDP |
 
 ## Evaluation
 
-Upstream benchmark matrix (subset runs, seed 42). Full table: [`docs/benchmark_results.md`](../docs/benchmark_results.md). Regenerate: `telos eval-aggregate-results`.
+Upstream benchmark matrix (subset runs, seed 42). Full table: [`docs/benchmark_results.md`](../docs/benchmark_results.md). Regenerate: `agenticml eval-aggregate-results`.
 
 | Suite | n | Primary | Secondary | avg_tokens | avg_wall_sec |
 |-------|---|---------|-----------|------------|--------------|
@@ -182,15 +191,15 @@ Upstream benchmark matrix (subset runs, seed 42). Full table: [`docs/benchmark_r
 Paired ChatML baseline on the same suites: see [`chatml-llama3.1-8b-lora-merged.md`](chatml-llama3.1-8b-lora-merged.md).
 
 ```bash
-telos eval-benchmarks --suite <bfcl|toolbench|swe|format_validity> --format telos --model kosiasuzu/telos-llama3.1-8b-lora-merged
-telos eval-run-all --dry-run
-telos eval-aggregate-results
+agenticml eval-benchmarks --suite <bfcl|toolbench|swe|format_validity> --format agenticml --model kosiasuzu/agenticml-llama3.1-8b-lora-merged
+agenticml eval-run-all --dry-run
+agenticml eval-aggregate-results
 ```
 
 ## Technical Specifications
 
 - **Architecture:** Llama 3.1 8B causal LM, merged LoRA
-- **Software:** `telos train-telos-lora`, `peft`, `transformers`
+- **Software:** `agenticml train-on-format --format agenticml`, `peft`, `transformers`
 
 
 ## Model Card Contact

@@ -6,10 +6,10 @@ import json
 from pathlib import Path
 from typing import Any, Optional
 
-from telos.evaluation.benchmarks.bfcl.common import ResultHandler, model_dir_name, retry_metrics_from_rows
-from telos.evaluation.benchmarks.bfcl.subset import load_subset, load_subset_id_map
-from telos.evaluation.benchmarks.common import repo_root
-from telos.evaluation.benchmarks.suite import SuiteScore
+from agenticml.evaluation.benchmarks.bfcl.common import ResultHandler, model_dir_name, retry_metrics_from_rows
+from agenticml.evaluation.benchmarks.bfcl.subset import load_subset, load_subset_id_map
+from agenticml.evaluation.benchmarks.common import repo_root
+from agenticml.evaluation.benchmarks.suite import SuiteScore
 
 
 def _skip_category(test_category: str) -> bool:
@@ -23,7 +23,7 @@ def _skip_category(test_category: str) -> bool:
 
 
 def _ensure_utils():
-    from telos.evaluation.benchmarks.bfcl.subset import ensure_bfcl_on_path
+    from agenticml.evaluation.benchmarks.bfcl.subset import ensure_bfcl_on_path
 
     ensure_bfcl_on_path()
     from bfcl_eval import utils as u
@@ -149,7 +149,7 @@ def score(
     partial: bool = True,
 ) -> SuiteScore:
     """run gorilla evaluate_task per category; return unified suite score."""
-    from telos.evaluation.benchmarks.bfcl.subset import ensure_bfcl_scoring
+    from agenticml.evaluation.benchmarks.bfcl.subset import ensure_bfcl_scoring
 
     ensure_bfcl_scoring()
     from bfcl_eval.eval_checker.eval_runner import evaluate_task
@@ -208,7 +208,7 @@ def score(
         elif accs:
             primary = sum(accs) / len(accs)
 
-    summary_path = out_score / slug / "telos_subset_summary.json"
+    summary_path = out_score / slug / "agenticml_subset_summary.json"
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     summary_path.write_text(
         json.dumps(
@@ -243,8 +243,8 @@ def rows_to_task_results(
     rows: list[dict[str, Any]],
     score: SuiteScore,
 ) -> list:
-    from telos.evaluation.benchmarks.bfcl.common import count_retry_steps
-    from telos.evaluation.harness.task import TaskResult, TaskTiming, TaskTokens
+    from agenticml.evaluation.benchmarks.bfcl.common import count_retry_steps
+    from agenticml.evaluation.harness.task import TaskResult, TaskTiming, TaskTokens
 
     out: list[TaskResult] = []
     for row in rows:

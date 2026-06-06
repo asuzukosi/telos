@@ -1,23 +1,24 @@
-"""run bfcl subset through telos backend."""
+"""run bfcl subset through agenticml backend."""
 
 from __future__ import annotations
 
 import json
 from typing import Any
 
-from telos.evaluation.benchmarks.bfcl.common import (
+from agenticml.evaluation.benchmarks.bfcl.common import (
     BFCLStep,
     encode_result,
     entry_tool_schemas,
     execution_result_frame,
+    tool_name_from_call_string,
     infer_multi_turn,
     result_row,
     route_infer_entry,
 )
-from telos.evaluation.benchmarks.suite import RunContext
-from telos.evaluation.harness.backends.telos_backend import TelosBackend
-from telos.sdk import StepResult
-from telos.trajectory import Trajectory
+from agenticml.evaluation.benchmarks.suite import RunContext
+from agenticml.evaluation.harness.backends.agenticml_backend import AgenticMLBackend
+from agenticml.sdk import StepResult, with_tool_obs
+from agenticml.trajectory import Trajectory
 
 DEFAULT_GOAL = "You are a helpful assistant that calls functions accurately."
 
@@ -43,16 +44,15 @@ def _actions_from_step(step: StepResult | None) -> list[dict]:
     return out
 
 
-def _telos_step(
+def _agenticml_step(
     traj: Trajectory,
     entry: dict,
-    backend: TelosBackend,
+    backend: AgenticMLBackend,
     *,
     max_new_tokens: int,
 ) -> tuple[BFCLStep, Trajectory]:
     out = backend.step(
-        traj,
-        entry_tool_schemas(entry),
+        with_tool_obs(traj, entry_tool_schemas(entry)),
         max_new_tokens=max_new_tokens,
         strict=False,
     )
@@ -71,14 +71,14 @@ def _telos_step(
 
 
 def infer_single_turn(
-    backend: TelosBackend,
+    backend: AgenticMLBackend,
     entry: dict,
     *,
     max_new_tokens: int = 512,
 ) -> dict[str, Any]:
     user_turn = entry["question"][0]
     content = user_turn[0]["content"] if user_turn else ""
-    st, _ = _telos_step(
+    st, _ = _agenticml_step(
         Trajectory(entry_to_prelude(entry, user_content=content)),
         entry,
         backend,
@@ -93,8 +93,8 @@ def infer_single_turn(
     )
 
 
-def infer_multi_turn_telos(
-    backend: TelosBackend,
+def infer_multi_turn_agenticml(
+    backend: AgenticMLBackend,
     entry: dict,
     *,
     model_slug: str,
@@ -115,15 +115,16 @@ def infer_multi_turn_telos(
         return state
 
     def step(state: Trajectory, e: dict) -> tuple[BFCLStep, Trajectory]:
-        return _telos_step(state, e, backend, max_new_tokens=max_new_tokens)
+        return _agenticml_step(state, e, backend, max_new_tokens=max_new_tokens)
 
     def feed_results(
-        state: Trajectory, _calls: list[str], execution_results: list[str]
+        state: Trajectory, call_strings: list[str], execution_results: list[str]
     ) -> Trajectory:
-        for er in execution_results:
-            state.append(
-                {"type": "result", "content": execution_result_frame(er)}
-            )
+        for call_str, er in zip(call_strings, execution_results):
+            state.append({
+                "type": "result",
+                "content": execution_result_frame(er, tool_name_from_call_string(call_str)),
+            })
         return state
 
     return infer_multi_turn(
@@ -140,7 +141,7 @@ def infer_multi_turn_telos(
 
 
 def run_one_task(
-    backend: TelosBackend,
+    backend: AgenticMLBackend,
     entry: dict,
     ctx: RunContext,
 ) -> dict[str, Any]:
@@ -149,7 +150,7 @@ def run_one_task(
         entry,
         model_id=ctx.model_id,
         infer_single=infer_single_turn,
-        infer_multi=infer_multi_turn_telos,
+        infer_multi=infer_multi_turn_agenticml,
         max_new_tokens=ctx.max_new_tokens,
         inject_retry_failure=ctx.inject_retry_failure,
     )

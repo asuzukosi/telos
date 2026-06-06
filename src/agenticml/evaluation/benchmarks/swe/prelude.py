@@ -1,10 +1,11 @@
-"""build telos prelude frames for a swe-bench instance."""
+"""build agenticml prelude frames for a swe-bench instance."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from telos.evaluation.benchmarks.swe.common import DEFAULT_GOAL
+from agenticml.bridge import bridge
+from agenticml.evaluation.benchmarks.swe.common import DEFAULT_GOAL
 
 # aligned with third_party/mini-swe-agent/src/minisweagent/config/benchmarks/swebench.yaml
 SWE_MISSION_TEMPLATE = """<pr_description>
@@ -50,7 +51,4 @@ def instance_to_prelude(instance: dict[str, Any]) -> list[dict[str, str]]:
 
 
 def instance_to_messages(instance: dict[str, Any]) -> list[dict[str, str]]:
-    return [
-        {"role": "system", "content": DEFAULT_GOAL},
-        {"role": "user", "content": instance_mission(instance)},
-    ]
+    return bridge.frames_to_messages(instance_to_prelude(instance))

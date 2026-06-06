@@ -46,7 +46,8 @@ coverage.xml
 *.swo
 *~
 
-telos-agent-data
+agenticml-agent-data
 data
 outputs
 results
+wandb/

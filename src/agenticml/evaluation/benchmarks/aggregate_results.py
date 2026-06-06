@@ -7,8 +7,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Optional
 
-from telos.evaluation.benchmarks.common import repo_root
-from telos.evaluation.benchmarks.run_all import MATRIX_FORMATS, MATRIX_SUITES
+from agenticml.evaluation.benchmarks.common import repo_root
+from agenticml.evaluation.benchmarks.run_all import MATRIX_FORMATS, MATRIX_SUITES
 
 # (primary metric keys in priority order, secondary metric key, primary label, secondary label)
 _SUITE_SPEC: dict[str, tuple[tuple[str, ...], str, str, str]] = {
@@ -140,7 +140,7 @@ def render_markdown(rows: list[ResultRow], *, results_root: Path) -> str:
         "# benchmark results",
         "",
         "aggregated from `results/benchmarks/<suite>/<format>/summary.json` envelopes.",
-        f"regenerate: `telos eval-aggregate-results` (reads `{results_root}`).",
+        f"regenerate: `agenticml eval-aggregate-results` (reads `{results_root}`).",
         "",
         "## matrix",
         "",

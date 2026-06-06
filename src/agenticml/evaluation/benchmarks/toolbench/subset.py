@@ -8,10 +8,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from telos.evaluation.benchmarks.common import repo_root
+from agenticml.evaluation.benchmarks.common import repo_root
 
 TOOLBENCH_ROOT_REL = Path("third_party/ToolBench")
-SUBSET_SOURCE = "telos.evaluation.benchmarks.toolbench.subset:SUBSET_IDS"
+SUBSET_SOURCE = "agenticml.evaluation.benchmarks.toolbench.subset:SUBSET_IDS"
 INSTRUCTION_FILE = Path("data/test_instruction/G1_instruction.json")
 QUERY_IDS_FILE = Path("data/test_query_ids/G1_instruction.json")
 

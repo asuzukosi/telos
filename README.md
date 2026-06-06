@@ -1,19 +1,11 @@
-# Telos: Agent Native Serialization Format for Language Agents
+# AgenticML: Agent Native Serialization Format for Language Agents
 
 A goal-native serialization format for language agents.
  
-Telos is a research project exploring an alternative to chat-completion
-interfaces for autonomous agents. Where ChatML and Harmony treat every
-turn as a message with a role, Telos uses typed frames: goal, mission,
-belief, plan, think, action, result, feedback, reward, that are
-first-class objects in the serialization itself. Each frame is
-delimited by a single special token from the model's reserved
-vocabulary.
+AgenticML is a research project exploring an alternative to chat-completion interfaces for autonomous agents. Where ChatML and Harmony treat every turn as a message with a role, AgenticML uses typed frames: goal, mission, belief, plan, think, action, result, feedback, reward, that are first-class objects in the serialization itself. Each frame is delimited by a single special token from the model's reserved vocabulary.
  
-`The hypothesis`: an interface designed for agent loops, with explicit
-state and tool semantics, produces more interpretable and more
-recoverable agent behavior than a chat envelope retrofitted with tool
-calls.
+`The hypothesis`: an interface designed for agent loops, with explicit state and tool semantics, produces more interpretable and more
+recoverable agent behavior than a chat envelope retrofitted with tool calls.
 
 ## Installation
 
@@ -59,41 +51,56 @@ calls.
   ```bash
   pip install -e ".[train]"        # LoRA training, embedding init
   pip install -e ".[eval]"         # format validity eval
-  pip install -e ".[data]"         # clean/push, telos→chatml
+  pip install -e ".[data]"         # clean/push dataset pipeline
   pip install -e ".[data-gen]"     # synthetic jsonl via openrouter
   pip install -e ".[dev,train,eval,data,data-gen]"   # full workspace
   ```
 
-  Prefer a platform-specific PyTorch wheel from [pytorch.org](https://pytorch.org/) when installing `train` or `eval`. The legacy `llm-scripts` extra is only `torch>=2.0`; use `train` for the full training stack.
+  Prefer a platform-specific PyTorch wheel from [pytorch.org](https://pytorch.org/) when installing `train` or `eval`.
 
-- **`apply_trajectory_template(..., return_tensors="np")`:** install NumPy (`pip install -e ".[tokenizer-numpy]"` or any `numpy>=1.24`).
+- **Hugging Face:** authenticate with `hf auth login` (or env token). Init checkpoints and the trajectory dataset live under the `kosiasuzu/agenticml-*` repos on the Hub; Llama base access (`meta-llama/Llama-3.1-8B`) is still required for embedding init.
 
-- **Hugging Face:** tokenizer and model tests expect access to the gated checkpoint `meta-llama/Llama-3.1-8B`. Authenticate with `huggingface-cli login` (or env token) before running those tests.
+## Hugging Face artifacts
+
+| Repo | Role |
+|------|------|
+| `kosiasuzu/agenticml-agent-llama-3.1-8b-init` | AgenticML marker init base (training) |
+| `kosiasuzu/agenticml-llama3.1-8b-lora-merged` | AgenticML merged model (eval + inference) |
+| `kosiasuzu/chatml-agent-llama-3.1-8b-init` | ChatML baseline init base (weights + instruct tokenizer) |
+| `kosiasuzu/chatml-llama3.1-8b-lora-merged` | ChatML merged eval model (weights + instruct tokenizer) |
+| `kosiasuzu/agenticml-agent-trajectory-dataset` | Training + format-validity dataset |
+
+**End-to-end walkthrough:** [`recipe.md`](recipe.md) — base Llama → init → dataset → train both formats → eval, with smoke tests at each step.
+
+Model cards: [`model_cards/`](model_cards/). Benchmark ops: [`docs/eval_dependencies.md`](docs/eval_dependencies.md), [`docs/eval_swe_bench.md`](docs/eval_swe_bench.md). Published results: [`docs/benchmark_results.md`](docs/benchmark_results.md).
+
+All CLI commands use **merged** checkpoints for inference and eval (`--model ...-lora-merged`). LoRA training pushes adapters to `<hub-repo-id>-adapter` and merged weights to `--hub-repo-id`.
+
+**ChatML init tokenizer:** `init-embeddings --format chatml` replaces the base tokenizer with the Llama 3.1 Instruct tokenizer on the init checkpoint. Training and inference load model + tokenizer from the init or merged hub repo (`--model-id`).
 
 ## Commands
 
-After `pip install -e .` (plus extras as needed), use the `telos` CLI or `python -m telos`. Example invocations are in [`command.txt`](command.txt).
+After `pip install -e .` (plus extras as needed), use the `agenticml` CLI or `python -m agenticml`. Example invocations are in [`command.txt`](command.txt).
 
 | Command | Extra | Purpose |
 |---------|-------|---------|
-| `telos train-telos-lora` | `train` | Fine-tune Telos-format LoRA |
-| `telos train-chatml-lora` | `train` | Fine-tune ChatML LoRA |
-| `telos init-telos-embeddings` | `train` | Initialize Telos reserved-token embeddings |
-| `telos verify-telos-embeddings` | `train` | Verify Telos init checkpoint embedding rows |
-| `telos init-chatml-embeddings` | `train` | Initialize ChatML marker embeddings |
-| `telos eval-benchmarks --suite format_validity` | `eval` | Generate and score format validity |
-| `telos eval-benchmarks` | `eval-benchmarks` | BFCL / ToolBench subset inference + scoring (telos or chatml) |
-| `telos data-clean-push` | `data` | Validate, split, push trajectory dataset |
-| `telos data-telos-to-chatml` | `data` | Add ChatML `messages` column to jsonl |
-| `telos data-synthetic-gen` | `data-gen` | Parallel synthetic trajectory generation |
+| `agenticml train-on-format` | `train` | Fine-tune (`--format agenticml\|chatml`, `--mode lora\|full`) |
+| `agenticml init-embeddings` | `train` | Initialize marker embeddings (`--format agenticml\|chatml`) |
+| `agenticml verify-embeddings` | `train` | Verify init checkpoint embedding rows (`--format agenticml\|chatml`) |
+| `agenticml eval-benchmarks --suite format_validity` | `eval` | Generate and score format validity |
+| `agenticml eval-benchmarks` | `eval-benchmarks` | BFCL / ToolBench / SWE subset inference + scoring (agenticml or chatml) |
+| `agenticml eval-run-all` | `eval-benchmarks` | Run full benchmark matrix (suites × formats) |
+| `agenticml eval-aggregate-results` | `eval-benchmarks` | Publish `docs/benchmark_results.md` from result envelopes |
+| `agenticml data-clean-push` | `data` | Validate, add ChatML `messages`, split, push dataset |
+| `agenticml data-synthetic-gen` | `data-gen` | Parallel synthetic trajectory generation |
 
 Multi-GPU training uses `torchrun` on the command module, for example:
 
 ```bash
-torchrun --standalone --nproc_per_node=2 -m telos.cli.commands.train_telos_lora --help
+torchrun --standalone --nproc_per_node=2 -m agenticml.cli.commands.train_on_format --format agenticml --help
 ```
 
-List commands: `telos` or `telos --help`. Per-command help: `telos <command> --help`.
+List commands: `agenticml` or `agenticml --help`. Per-command help: `agenticml <command> --help`.
 
 ## Tests
 
@@ -103,27 +110,43 @@ From the repository root:
 pytest
 ```
 
-`pyproject.toml` sets `testpaths` and `pythonpath=["src"]`. Some tests load the Llama tokenizer or full model and **skip** if the hub is unreachable or **CUDA / torch** are missing (for example `tests/runtime/test_hf_generator.py` and the causal-LM case in `tests/test_llama_gpu_integration.py`).
+`pyproject.toml` sets `testpaths = ["tests"]` and `pythonpath = ["src", ...]`. The test tree mirrors `src/agenticml/`:
+
+```
+tests/
+├── test_frames.py, test_bridge.py, test_trajectory.py, test_validators.py, test_sdk.py, test_agentic_template.py
+├── evaluation/
+│   ├── benchmarks/          # bfcl/, swe/, toolbench/, format_validity/, aggregate, run_all
+│   └── harness/             # runner, task, backends/
+└── runtime/                 # hf_generator, runtime
+```
+
+Some tests load Hub checkpoints or a GPU and **skip** when unavailable (`tests/runtime/test_hf_generator.py`). Run a fast subset without Hub/GPU:
+
+```bash
+pytest --ignore=tests/runtime
+```
 
 ## What's in the box
  
-The Telos package separates the format SDK (what other people would
+The AgenticML package separates the format SDK (what other people would
 build on) from the reference runtime (one possible implementation,
 used here for our own evaluations).
  
 ```
-src/telos/
+src/agenticml/
 ├── constants.py        SDK: frame types, owner table, token map
-├── frames.py           SDK: Frame dataclass, parser, renderer, sanitize
-├── tokenizer.py        SDK: tokenizer adapter for Llama-3.1; encode/decode, apply_trajectory_template
+├── frames.py           SDK: Frame dataclass, marker-wire parser
+├── bridge.py           SDK: AgenticML ↔ ChatML conversion (single source of truth)
+├── agentic_template.py Jinja wire render, marker aliasing, hub bake, tokenization
 ├── trajectory.py       SDK: Trajectory container with dict/frame conversion
 ├── validators.py       SDK: sequence-level validation
 ├── sdk.py              SDK: step(), the stateless trajectory-advancement API
 ├── cli/                CLI entry and command wrappers
-├── training/           LoRA training pipelines
+├── training/           supervised training (LoRA + full FT)
 ├── evaluation/         Eval harnesses
 ├── dataset_prep/       Dataset validate, convert, generate, push
-├── model_init/         Embedding initialization for Telos / ChatML bases
+├── model_init/         Embedding initialization for AgenticML / ChatML bases
 ├── prompts/            Prompt constants for data generation
 └── runtime/            Reference runtime (one possible implementation)
     ├── tools.py        ToolRegistry, Tool, ToolError
@@ -132,7 +155,7 @@ src/telos/
 ```
  
 Anyone building a different runtime needs only the SDK modules; the
-`runtime/` subpackage is not required for defining or parsing Telos-only artifacts.
+`runtime/` subpackage is not required for defining or parsing AgenticML-only artifacts.
  
 ## Frame types
  
@@ -150,47 +173,81 @@ Anyone building a different runtime needs only the SDK modules; the
 | `<\|feedback\|>` | runtime | prose   | Tool progress or user follow-up. Persistent.                    |
 | `<\|reward\|>`   | runtime | number  | Training-time reward signal. Stripped after consumption.        |
  
-Markers are mapped to `<|reserved_special_token_0|>` through
-`<|reserved_special_token_10|>` in the Llama-3.1 tokenizer. Aliasing
-happens at the string level; the underlying tokenizer is unmodified.
-`TelosTokenizer.apply_trajectory_template` renders a `Trajectory` to
-wire text and optionally returns token ids (analogous to
-`PreTrainedTokenizer.apply_chat_template`).
+Frame markers are `<|reserved_special_token_0|>` through
+`<|reserved_special_token_10|>` on Llama 3.1 (slot 7 is generation stop /
+block boundary). rendering goes through the hub tokenizer:
+`tokenizer.apply_chat_template(trajectory.to_dict(), ...)`.
+use `reserved_to_markers()` only for logs or docs.
 
-### Telos tokenizer gotcha (inference and eval)
-
-Telos wire strings use markers like `<|goal|>`, but **training and the model see reserved-slot token ids** (`<|reserved_special_token_0|>`, …). `TelosTokenizer` rewrites markers at encode time and restores them on decode; the underlying Hugging Face tokenizer is unchanged.
-
-- **Do:** `ids = tt.encode(render(frames))` (or `apply_trajectory_template(..., tokenize=True)`), then `model.generate` on `ids`; decode with `tt.decode(generated_ids)` before `parse()`.
-- **Do not:** `AutoTokenizer(rendered_wire)` or `tt.hf(rendered_wire)` — that BPE-tokenizes the marker *strings* and does not match training.
-- **Eval:** `telos eval-benchmarks --suite format_validity --format telos` uses `TelosTokenizer` automatically. ChatML eval uses `apply_chat_template` on the instruct tokenizer as usual.
-
-Any prior Telos format-validity numbers run with raw `AutoTokenizer` on wire text should be discarded and re-run after this fix.
+- **Render / tokenize:** `render_trajectory(tokenizer, trajectory)` or
+  `tokenizer.apply_chat_template(trajectory.to_dict(), tokenize=True, ...)`.
+- **Decode:** `raw = tokenizer.decode(generated_ids)` then
+  `parse_reserved_wire(raw)` (reserved → markers → frames).
+- **Hub:** `AutoTokenizer.from_pretrained(model_id)` — AgenticML checkpoints ship
+  the agentic template on the tokenizer; ChatML merged checkpoints ship the
+  Llama 3.1 Instruct chat template (not the base model tokenizer).
  
 ## Example trajectory
  
 ```
-<|goal|>You are a coding assistant.
-<|mission|>How many lines are in main.py?
-<|obs|>tools:
+<|goal|>You are a coding assistant.<|mission|>How many lines are in main.py?<|obs|>tools:
 namespace tools {
-  // Read a file's contents.
-  type read_file = (_: {
-    path: string,
-  }) => any;
-  type answer = (_: {
-    text: string,
-  }) => any;
-}
-<|action|>{"tool":"read_file","path":"main.py"}<|end|>
-<|result|>{"ok":1,"value":"def main():\n    print('hi')\n"}
-<|belief|>main.py has 2 lines.
-<|action|>{"tool":"answer","text":"main.py has 2 lines."}<|end|>
+  type read_file = (_: { path: string }) => any;
+  type answer = (_: { text: string }) => any;
+}<|action|>{"tool":"read_file","path":"main.py"}<|end|><|result|>{"tool":"read_file","value":"def main():\n    print('hi')\n"}<|belief|>main.py has 2 lines.<|action|>{"tool":"answer","text":"main.py has 2 lines."}<|end|>
 ```
- 
+
+## Same task, two traces (AgenticML vs ChatML)
+
+The project trains and evaluates **paired** models on the **same** underlying trajectories. AgenticML keeps tool semantics in typed frames; ChatML maps the same story onto role-delimited wire (see [`bridge.py`](src/agenticml/bridge.py)).
+
+**Task:** count lines in `main.py` using `read_file`, then answer.
+
+### AgenticML wire (frames)
+
+```
+<|goal|>You are a coding assistant.<|obs|>tools:
+namespace tools {
+  type read_file = (_: { path: string }) => any;
+  type answer = (_: { text: string }) => any;
+}<|mission|>How many lines are in main.py?<|action|>{"tool":"read_file","path":"main.py"}<|end|><|result|>{"tool":"read_file","value":"def main():\n    print('hi')\n"}<|action|>{"tool":"answer","text":"main.py has 2 lines."}<|end|>
+```
+
+### ChatML wire (same task)
+
+Llama 3.1 `apply_chat_template` on the bridged conversation (date preamble omitted):
+
+```
+<|start_header_id|>system<|end_header_id|>
+
+You are a coding assistant.
+
+tools:
+namespace tools {
+  type read_file = (_: { path: string }) => any;
+  type answer = (_: { text: string }) => any;
+}<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+How many lines are in main.py?<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+{"name": "read_file", "parameters": "{\"path\": \"main.py\"}"}<|eot_id|><|start_header_id|>ipython<|end_header_id|>
+
+{"tool": "read_file", "value": "def main():\n    print('hi')\n"}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+main.py has 2 lines.<|eot_id|>
+```
+
+When the model **generates** a tool call (not the history wire above), training uses a compact assistant fragment:
+
+```
+<|python_tag|>{"name": "read_file", "arguments": "{\"path\": \"main.py\"}"}<|eom_id|>
+```
+
+**Takeaway:** AgenticML names the *kind* of turn (`action`, `result`, …) in the token stream; ChatML names the *speaker* (`assistant`, `ipython`, …) in header tokens and embeds tool JSON in assistant spans. The benchmark harness converts between them so both formats face identical tasks and scorers where possible.
+
 ## Comparison to ChatML and Harmony
  
-| Property                       | ChatML                                  | Harmony (gpt-oss)                                                                                            | Telos                                                                |
+| Property                       | ChatML                                  | Harmony (gpt-oss)                                                                                            | AgenticML                                                                |
 | ------------------------------ | --------------------------------------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
 | Special tokens in the format   | 2 (`<\|im_start\|>`, `<\|im_end\|>`)        | 7 (`<\|start\|>`, `<\|message\|>`, `<\|end\|>`, `<\|channel\|>`, `<\|constrain\|>`, `<\|return\|>`, `<\|call\|>`)  | 11 (one per frame type)                                              |
 | How roles are encoded          | Inline strings after `<\|im_start\|>`    | Inline strings after `<\|start\|>`                                                                            | First token of each frame is its type marker; no separate role      |
@@ -205,9 +262,9 @@ namespace tools {
 ## Design decisions
  
 - **Base model: Llama-3.1-8B-base.** Llama-3 has 250 documented reserved
-  special tokens; Qwen2.5 does not. Telos claims eleven of these
+  special tokens; Qwen2.5 does not. AgenticML claims eleven of these
   reserved slots and aliases them to frame markers at the string level:
-  | Telos marker     | Reserved token                     | Token ID |
+  | AgenticML marker     | Reserved token                     | Token ID |
   | ---------------- | ---------------------------------- | -------- |
   | `<\|goal\|>`       | `<\|reserved_special_token_0\|>`     | 128002   |
   | `<\|mission\|>`    | `<\|reserved_special_token_1\|>`     | 128003   |
@@ -222,9 +279,9 @@ namespace tools {
   | `<\|reward\|>`     | `<\|reserved_special_token_10\|>`    | 128018   |
 - **No closing tokens.** Each frame extends until the next marker or
   `<|end|>`.
-- **`<|end|>` is a generation stop, not an envelope.** The model
-  signals "your turn" by emitting any model-owned marker; no warm-up
-  token needed.
+- **`<|end|>` is a stored frame and generation stop.** Each model turn
+  ends with an explicit `end` frame in the trajectory; the model emits
+  `<|end|>` to yield control to the runtime.
 - **Batched actions per turn.** A model block may emit multiple
   actions; the runtime emits a result for each, in order.
 - **No action IDs in v1.** Action-result correspondence is positional.
@@ -232,20 +289,19 @@ namespace tools {
   seen this format in pretraining.
 - **Strict ownership at the parser.** Model output cannot contain
   runtime-owned frames in strict mode.
-- **Sanitization at the runtime boundary.** External text (user
-  messages, tool output) is stripped of Telos markers before being
-  embedded in a frame.
+- **Tool schemas are caller-owned.** Use `with_tool_obs(trajectory, tools)`
+  once before `step()`; `step()` tokenizes the trajectory as given.
 ## Next steps
  
 - [x] HF generator (`HfGenerator` in `runtime/hf_generator.py`, wraps `AutoModelForCausalLM.generate`)
-- [x] CLI pipelines (`telos` commands; see Commands above and `command.txt`)
-- [x] Synthetic data generation (`telos data-synthetic-gen`)
-- [x] LoRA fine-tune commands (`telos train-telos-lora`, `telos train-chatml-lora`)
-- [x] Format validity eval (`telos eval-benchmarks --suite format_validity`)
+- [x] CLI pipelines (`agenticml` commands; see Commands above and `command.txt`)
+- [x] Synthetic data generation (`agenticml data-synthetic-gen`)
+- [x] Supervised train command (`agenticml train-on-format`; `--format agenticml|chatml`, `--mode lora|full`)
+- [x] Format validity eval (`agenticml eval-benchmarks --suite format_validity`)
 - [x] Hand-authored seed trajectories
 - [x] Synthetic data generation pipeline
-- [x] LoRA fine-tune of Llama-3.1-8B-base on the Telos format
+- [x] LoRA fine-tune of Llama-3.1-8B-base on the AgenticML format
 - [x] ChatML+tools baseline fine-tune on matched data
-- [x] BFCL subset eval (`telos eval-benchmarks --suite bfcl`)
-- [x] ToolBench upstream subset (`telos eval-benchmarks --suite toolbench`)
-- [ ] SWE-bench-Lite subset
+- [x] BFCL subset eval (`agenticml eval-benchmarks --suite bfcl`)
+- [x] ToolBench upstream subset (`agenticml eval-benchmarks --suite toolbench`)
+- [x] SWE-bench-Lite subset (`agenticml eval-benchmarks --suite swe`; see [`docs/eval_swe_bench.md`](docs/eval_swe_bench.md))

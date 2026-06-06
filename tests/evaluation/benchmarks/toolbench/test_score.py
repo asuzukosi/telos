@@ -1,11 +1,11 @@
-from telos.evaluation.benchmarks.toolbench.score import rows_to_task_results, score
-from tests.test_toolbench_convert import _finish_row
+from agenticml.evaluation.benchmarks.toolbench.score import rows_to_task_results, score
+from tests.evaluation.benchmarks.toolbench.helpers import finish_row
 
 
 def test_score_structural_pass_rate():
     rows = [
-        _finish_row(final_answer="a"),
-        {**_finish_row(final_answer="b"), "id": "2", "success": False, "final_answer": ""},
+        finish_row(final_answer="a"),
+        {**finish_row(final_answer="b"), "id": "2", "success": False, "final_answer": ""},
     ]
     rows[1]["messages"] = rows[1]["messages"][:-2]
     s = score(rows)

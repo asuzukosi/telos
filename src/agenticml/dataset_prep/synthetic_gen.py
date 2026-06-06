@@ -1,4 +1,4 @@
-"""parallel synthetic telos trajectory jsonl generation via openrouter."""
+"""parallel synthetic agenticml trajectory jsonl generation via openrouter."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 
-from telos.prompts.synthetic_data_generation import SYNTHETIC_DATA_GENERATION_PROMPT
+from agenticml.prompts.synthetic_data_generation import SYNTHETIC_DATA_GENERATION_PROMPT
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_OUT_PATH = _REPO_ROOT / "data" / "generated.jsonl"

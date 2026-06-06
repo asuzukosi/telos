@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from telos.evaluation.benchmarks.bfcl.common import (
+from agenticml.evaluation.benchmarks.bfcl.common import (
     BFCLStep,
     encode_result,
     entry_tool_schemas,
@@ -12,20 +12,17 @@ from telos.evaluation.benchmarks.bfcl.common import (
     result_row,
     route_infer_entry,
 )
-from telos.evaluation.benchmarks.suite import RunContext
-from telos.evaluation.harness.backends.chatml_backend import (
-    ChatMLBackend,
-    _parse,
-    _with_tools,
-)
-from telos.evaluation.harness.backends.common import GenStats
-from telos.evaluation.harness.chatml_fc import parse_chatml_fc_call
+from agenticml.evaluation.benchmarks.suite import RunContext
+from agenticml.bridge import bridge
+from agenticml.evaluation.harness.backends.chatml_backend import ChatMLBackend
+from agenticml.evaluation.harness.backends.common import GenStats
+from agenticml.evaluation.harness.chatml_fc import parse_chatml_fc_call
 
 
 def entry_turn_messages(entry: dict, turn_idx: int) -> list[dict]:
     turn = [dict(m) for m in entry["question"][turn_idx]]
     if turn_idx == 0:
-        from telos.evaluation.benchmarks.bfcl.subset import ensure_bfcl_on_path
+        from agenticml.evaluation.benchmarks.bfcl.subset import ensure_bfcl_on_path
 
         ensure_bfcl_on_path()
         from bfcl_eval.model_handler.utils import system_prompt_pre_processing_chat_model
@@ -47,10 +44,11 @@ def _chatml_step(
     if tools_already_in_messages:
         prompt_messages = list(messages)
     else:
-        prompt_messages = _with_tools(list(messages), entry_tool_schemas(entry))
+        prompt_messages = bridge.inject_tool_schemas(list(messages), entry_tool_schemas(entry))
     stats = GenStats()
     raw = backend._generate(prompt_messages, max_new_tokens, stats)
-    call, _, stop = _parse(raw)
+    parsed = bridge.parse_chatml_generation(raw)
+    call, stop = parsed.tool_call, parsed.stop_reason
     if call is None:
         call = parse_chatml_fc_call(raw)
         if call is not None:

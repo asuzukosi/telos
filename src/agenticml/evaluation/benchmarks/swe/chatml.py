@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from telos.evaluation.benchmarks.suite import RunContext
-from telos.evaluation.benchmarks.swe.env import (
+from agenticml.evaluation.benchmarks.suite import RunContext
+from agenticml.evaluation.benchmarks.swe.env import (
     DEFAULT_MAX_ITERATIONS,
     cleanup_environment,
     environment_for_instance,
 )
-from telos.evaluation.benchmarks.swe.io import result_row
-from telos.evaluation.benchmarks.swe.loop import run_chatml_swe
-from telos.evaluation.benchmarks.swe.registry import BashEnvironment, registry_from_env
-from telos.evaluation.harness.backends.chatml_backend import ChatMLBackend
+from agenticml.evaluation.benchmarks.swe.io import result_row
+from agenticml.evaluation.benchmarks.swe.loop import run_chatml_swe
+from agenticml.evaluation.benchmarks.swe.registry import BashEnvironment, registry_from_env
+from agenticml.evaluation.harness.backends.chatml_backend import ChatMLBackend
 
 
 def run_one_task(

@@ -1,8 +1,8 @@
 import random
 from pathlib import Path
 
-from telos.evaluation.benchmarks.bfcl.subset import BFCLSubset
-from telos.evaluation.benchmarks.common import sample_entries
+from agenticml.evaluation.benchmarks.bfcl.subset import BFCLSubset
+from agenticml.evaluation.benchmarks.common import sample_entries
 
 
 def _fake_subset(n: int) -> BFCLSubset:

@@ -1,87 +1,102 @@
-# executable commands for the telos project
+# executable commands for the agenticml project
 # install first: pip install -e .
-# list commands: telos
-# per-command help: telos <command> --help
+# full walkthrough (init -> dataset -> train -> eval + smoke tests): recipe.md
+# list commands: agenticml
+# per-command help: agenticml <command> --help
+# all eval/inference uses merged checkpoints (--model ...-lora-merged)
+# convention: run the pytest line(s) in each section before the agenticml/torchrun commands
 
 
-# --- init telos embeddings ---
-# average seed-word embeddings into llama reserved slots for telos markers, then push to hub
-telos init-telos-embeddings \
+# --- prerequisites ---
+pytest tests/test_frames.py tests/test_bridge.py tests/test_sdk.py -q
+python -c "import torch; print('cuda:', torch.cuda.is_available())"
+
+
+# --- init agenticml embeddings ---
+pytest tests/test_agentic_template.py -q
+
+# average seed-word embeddings into llama reserved slots for agenticml markers, then push to hub
+agenticml init-embeddings --format agenticml \
   --base-model meta-llama/Llama-3.1-8B \
-  --repo-id kosiasuzu/telos-agent-llama-3.1-8b-init
+  --repo-id kosiasuzu/agenticml-agent-llama-3.1-8b-init
 
 # read-only check: reserved rows == mean of seed-word embeddings (no re-init)
-telos verify-telos-embeddings \
-  --model kosiasuzu/telos-agent-llama-3.1-8b-init
+agenticml verify-embeddings --format agenticml \
+  --model kosiasuzu/agenticml-agent-llama-3.1-8b-init
 
 
 # --- init chatml embeddings ---
-# mean-pool seed rows into chatml marker slots; uses instruct tokenizer vocab on base weights
-telos init-chatml-embeddings \
+pytest tests/evaluation/harness/backends/test_chatml_backend.py tests/test_tokenizer_helpers.py -q
+
+# mean-pool seed rows into chatml marker slots; replaces base tokenizer with instruct
+agenticml init-embeddings --format chatml \
   --base-model meta-llama/Llama-3.1-8B \
   --instruct-tokenizer meta-llama/Llama-3.1-8B-Instruct \
   --repo-id kosiasuzu/chatml-agent-llama-3.1-8b-init
 
+# read-only check: chatml marker rows == mean of seed-word embeddings
+agenticml verify-embeddings --format chatml \
+  --model kosiasuzu/chatml-agent-llama-3.1-8b-init
+
 
 # --- data: clean and push trajectories ---
-# validate jsonl trajectories, dedupe by mission, stratified train/eval split, push to hf datasets
-telos data-clean-push \
-  --input data/generated.jsonl \
-  --repo-id kosiasuzu/telos-agent-trajectory-dataset
+pytest tests/test_bridge.py tests/evaluation/benchmarks/test_aggregate_results.py -q
 
-# add chatml messages column to telos jsonl records
-telos data-telos-to-chatml \
-  --input data/trajectories.jsonl \
-  --output data/trajectories_chatml.jsonl
+# validate jsonl trajectories, fill chatml messages, dedupe, split, push to hf datasets
+agenticml data-clean-push \
+  --input data/generated.jsonl \
+  --repo-id kosiasuzu/agenticml-agent-trajectory-dataset
 
 # generate synthetic trajectories via openrouter (requires OPENROUTER_API_KEY in .env)
-telos data-synthetic-gen \
+agenticml data-synthetic-gen \
   --target 20000 \
   --workers 16 \
   --out data/generated.jsonl
 
 
-# --- train telos lora (multi-gpu) ---
-# fine-tune a telos-format lora on the trajectory dataset; pushes adapter and merged weights when repo ids are set
-torchrun --standalone --nproc_per_node=2 -m telos.cli.commands.train_telos_lora \
-  --model-id kosiasuzu/telos-agent-llama-3.1-8b-init \
-  --dataset kosiasuzu/telos-agent-trajectory-dataset \
-  --output-dir outputs/telos-lora-full \
-  --run-name telos-lora-full \
-  --adapter-repo-id kosiasuzu/telos-llama3.1-8b-lora-adapter \
-  --merged-repo-id kosiasuzu/telos-llama3.1-8b-lora-merged
+# --- train agenticml (multi-gpu) ---
+pytest tests/training/ -q
 
-# same telos training via the telos cli (single process)
-telos train-telos-lora \
-  --model-id kosiasuzu/telos-agent-llama-3.1-8b-init \
-  --dataset kosiasuzu/telos-agent-trajectory-dataset \
-  --output-dir outputs/telos-lora \
-  --run-name telos-lora \
-  --adapter-repo-id kosiasuzu/telos-llama3.1-8b-lora-adapter \
-  --merged-repo-id kosiasuzu/telos-llama3.1-8b-lora-merged
+# fine-tune on the trajectory dataset; lora hub push merges adapters before upload
+torchrun --standalone --nproc_per_node=2 -m agenticml.cli.commands.train_on_format \
+  --format agenticml \
+  --model-id kosiasuzu/agenticml-agent-llama-3.1-8b-init \
+  --dataset kosiasuzu/agenticml-agent-trajectory-dataset \
+  --output-dir outputs/agenticml-lora-full \
+  --run-name agenticml-lora-full \
+  --hub-repo-id kosiasuzu/agenticml-llama3.1-8b-lora-merged
+
+# same agenticml training via the agenticml cli (single process)
+agenticml train-on-format --format agenticml \
+  --model-id kosiasuzu/agenticml-agent-llama-3.1-8b-init \
+  --dataset kosiasuzu/agenticml-agent-trajectory-dataset \
+  --output-dir outputs/agenticml-lora \
+  --run-name agenticml-lora \
+  --hub-repo-id kosiasuzu/agenticml-llama3.1-8b-lora-merged
 
 
-# --- train chatml lora (multi-gpu) ---
-# fine-tune a chatml lora on the same dataset (uses messages column); default base is chatml-base-init
-torchrun --standalone --nproc_per_node=2 -m telos.cli.commands.train_chatml_lora \
+# --- train chatml (multi-gpu) ---
+# uses messages column; tokenizer from chatml init checkpoint
+torchrun --standalone --nproc_per_node=2 -m agenticml.cli.commands.train_on_format \
+  --format chatml \
   --model-id kosiasuzu/chatml-agent-llama-3.1-8b-init \
-  --dataset kosiasuzu/telos-agent-trajectory-dataset \
+  --dataset kosiasuzu/agenticml-agent-trajectory-dataset \
   --output-dir outputs/chatml-lora-full \
   --run-name chatml-lora-full \
-  --adapter-repo-id kosiasuzu/chatml-llama3.1-8b-lora-adapter \
-  --merged-repo-id kosiasuzu/chatml-llama3.1-8b-lora-merged
+  --hub-repo-id kosiasuzu/chatml-llama3.1-8b-lora-merged
 
-# same chatml training via the telos cli (single process)
-telos train-chatml-lora \
+# same chatml training via the agenticml cli (single process)
+agenticml train-on-format --format chatml \
   --model-id kosiasuzu/chatml-agent-llama-3.1-8b-init \
-  --dataset kosiasuzu/telos-agent-trajectory-dataset \
+  --dataset kosiasuzu/agenticml-agent-trajectory-dataset \
   --output-dir outputs/chatml-lora \
   --run-name chatml-lora \
-  --adapter-repo-id kosiasuzu/chatml-llama3.1-8b-lora-adapter \
-  --merged-repo-id kosiasuzu/chatml-llama3.1-8b-lora-merged
+  --hub-repo-id kosiasuzu/chatml-llama3.1-8b-lora-merged
 
 
 # --- eval setup (benchmark dependencies) ---
+pytest tests/evaluation/benchmarks/ -q --ignore=tests/evaluation/benchmarks/swe/test_smoke_pipeline.py
+
 # from repo root; see docs/eval_dependencies.md
 pip install -e ".[eval]"
 
@@ -103,74 +118,51 @@ cd ../..
 # cd ../..
 
 
-# --- format validity eval: telos ---
+# --- format validity eval: agenticml ---
 # default 100 eval rows (--num-examples -1 for all evaluable rows in the split)
-# uses TelosTokenizer encode/decode (reserved ids); re-run if you had old raw-AutoTokenizer telos metrics
-# generate telos completions and score parse/structural validity; peft = base + adapter
-telos eval-benchmarks \
+# uses hub apply_chat_template on trajectory frames (reserved marker ids)
+# generate agenticml completions and score parse/structural validity (merged checkpoint)
+agenticml eval-benchmarks \
   --suite format_validity \
-  --format telos \
-  --model kosiasuzu/telos-agent-llama-3.1-8b-init \
-  --adapter-mode peft \
-  --adapter-id kosiasuzu/telos-llama3.1-8b-lora-adapter \
-  --output-dir results/benchmarks/format_validity
-
-# telos eval on a merged (fused) checkpoint; --model is the full checkpoint, no --adapter-id
-telos eval-benchmarks \
-  --suite format_validity \
-  --format telos \
-  --model kosiasuzu/telos-llama3.1-8b-lora-merged \
-  --adapter-mode merged \
+  --format agenticml \
+  --model kosiasuzu/agenticml-llama3.1-8b-lora-merged \
   --output-dir results/benchmarks/format_validity
 
 
 # --- format validity eval: chatml ---
-# same eval harness for chatml message format; peft = base + adapter
-telos eval-benchmarks \
-  --suite format_validity \
-  --format chatml \
-  --model kosiasuzu/chatml-agent-llama-3.1-8b-init \
-  --adapter-mode peft \
-  --adapter-id kosiasuzu/chatml-llama3.1-8b-lora-adapter \
-  --output-dir results/benchmarks/format_validity
-
-# chatml eval on a merged checkpoint
-telos eval-benchmarks \
+agenticml eval-benchmarks \
   --suite format_validity \
   --format chatml \
   --model kosiasuzu/chatml-llama3.1-8b-lora-merged \
-  --adapter-mode merged \
   --output-dir results/benchmarks/format_validity
 
 
 # --- toolbench upstream subset (cached tool env) ---
 # requires: eval setup above (submodules + toolbench data.zip)
-telos eval-benchmarks \
+agenticml eval-benchmarks \
   --suite toolbench \
-  --format telos \
-  --model kosiasuzu/telos-llama3.1-8b-lora-merged \
-  --adapter-mode merged \
+  --format agenticml \
+  --model kosiasuzu/agenticml-llama3.1-8b-lora-merged \
   --num-examples 3 \
   --output-dir results/benchmarks/toolbench
 
-telos eval-benchmarks \
+agenticml eval-benchmarks \
   --suite toolbench \
   --format chatml \
   --model kosiasuzu/chatml-llama3.1-8b-lora-merged \
-  --adapter-mode merged \
   --num-examples 3 \
   --output-dir results/benchmarks/toolbench
 
 # toolbench re-score only (structural upstream pass rate; writes converted answers to score/)
-telos eval-benchmarks \
+agenticml eval-benchmarks \
   --suite toolbench \
-  --format telos \
-  --model kosiasuzu/telos-llama3.1-8b-lora-merged \
+  --format agenticml \
+  --model kosiasuzu/agenticml-llama3.1-8b-lora-merged \
   --score-only \
   --output-dir results/benchmarks/toolbench
 
 # optional full upstream gpt judge (requires OPENAI_API_KEY)
-# TOOLEVAL_GPT=1 telos eval-benchmarks --suite toolbench ...
+# TOOLEVAL_GPT=1 agenticml eval-benchmarks --suite toolbench ...
 
 
 # --- swe-bench-lite ---
@@ -178,31 +170,31 @@ telos eval-benchmarks \
 # requires: docker + containerd running, git submodule update --init third_party/mini-swe-agent third_party/SWE-bench
 # pre-pull eval images (first pull can take 10-30+ min; eval times out at ~600s otherwise)
 python -c "
-from telos.evaluation.benchmarks.swe.env import pull_instance_image
-from telos.evaluation.benchmarks.swe.subset import load_entries
+from agenticml.evaluation.benchmarks.swe.env import pull_instance_image
+from agenticml.evaluation.benchmarks.swe.subset import load_entries
 for e in load_entries(2, seed=42):
     print('pulling', e['instance_id'])
     pull_instance_image(e)
 "
 # smoke: low iteration cap; stops early on 3x identical bash (repeated_command)
-SWE_VERBOSE=1 telos eval-benchmarks \
+SWE_VERBOSE=1 agenticml eval-benchmarks \
   --suite swe \
-  --format telos \
-  --model kosiasuzu/telos-llama3.1-8b-lora-merged \
+  --format agenticml \
+  --model kosiasuzu/agenticml-llama3.1-8b-lora-merged \
   --num-examples 2 \
   --max-iterations 50 \
   --no-score \
   --output-dir results/benchmarks/swe
 
-telos eval-benchmarks \
+agenticml eval-benchmarks \
   --suite swe \
-  --format telos \
-  --model kosiasuzu/telos-llama3.1-8b-lora-merged \
+  --format agenticml \
+  --model kosiasuzu/agenticml-llama3.1-8b-lora-merged \
   --num-examples 3 \
   --output-dir results/benchmarks/swe
 
-# chatml swe smoke (match telos: 2 examples, iteration cap)
-SWE_VERBOSE=1 telos eval-benchmarks \
+# chatml swe smoke (match agenticml: 2 examples, iteration cap)
+SWE_VERBOSE=1 agenticml eval-benchmarks \
   --suite swe \
   --format chatml \
   --model kosiasuzu/chatml-llama3.1-8b-lora-merged \
@@ -212,35 +204,46 @@ SWE_VERBOSE=1 telos eval-benchmarks \
   --output-dir results/benchmarks/swe
 
 
-# --- benchmark matrix (telos + chatml × all suites) ---
+# --- benchmark matrix (agenticml + chatml × all suites) ---
 # requires: eval setup above
-# models: kosiasuzu/telos-llama3.1-8b-lora-merged (telos), kosiasuzu/chatml-llama3.1-8b-lora-merged (chatml)
+# models: kosiasuzu/agenticml-llama3.1-8b-lora-merged (agenticml), kosiasuzu/chatml-llama3.1-8b-lora-merged (chatml)
 # output: results/benchmarks/<suite>/<format>/summary.json (8 runs by default)
 
 # preview the 8-run matrix without loading models
-telos eval-run-all --dry-run
+agenticml eval-run-all --dry-run
 
 # smoke: 3 examples per suite, skip swe docker grader paths (inference only on bfcl/swe)
-telos eval-run-all \
+agenticml eval-run-all \
   --num-examples 3 \
   --no-score \
   --suites bfcl toolbench format_validity swe
 
 # smoke without swe (no docker)
-telos eval-run-all \
+agenticml eval-run-all \
   --num-examples 3 \
   --suites bfcl toolbench format_validity
 
-# full published matrix: bfcl + toolbench + swe + format_validity × telos + chatml
+# full published matrix: bfcl + toolbench + swe + format_validity × agenticml + chatml
 # long run: gpu for inference; docker for swe grading; see docs/eval_dependencies.md
-telos eval-run-all --continue-on-error
+agenticml eval-run-all --continue-on-error
 
 # re-grade bfcl/swe from existing result rows (no inference)
-telos eval-run-all \
+agenticml eval-run-all \
   --score-only \
   --suites bfcl swe
 
 # aggregate all summary.json envelopes -> docs/benchmark_results.md
-telos eval-aggregate-results
+agenticml eval-aggregate-results
 # optional paths:
-# telos eval-aggregate-results --results-dir results/benchmarks --output docs/benchmark_results.md --json results/benchmarks/aggregate.json
+# agenticml eval-aggregate-results --results-dir results/benchmarks --output docs/benchmark_results.md --json results/benchmarks/aggregate.json
+
+
+# --- publish hub model cards (README.md) ---
+# edit model_cards/*.md locally, then push to merged model repos
+hf upload kosiasuzu/agenticml-llama3.1-8b-lora-merged \
+  model_cards/agenticml-llama3.1-8b-lora-merged.md README.md \
+  --commit-message "update model card"
+
+hf upload kosiasuzu/chatml-llama3.1-8b-lora-merged \
+  model_cards/chatml-llama3.1-8b-lora-merged.md README.md \
+  --commit-message "update model card"

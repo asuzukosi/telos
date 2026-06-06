@@ -5,7 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedTokenizerBase
+
+from agenticml.constants import DEFAULT_CHATML_INSTRUCT_TOKENIZER
+from agenticml.tokenizer_helpers import single_token_id
 
 # chatml markers in the instruct tokenizer; rows are untrained in the base model.
 CHATML_TOKEN_SEEDS: dict[str, list[str]] = {
@@ -23,28 +26,38 @@ def _mean_pool_embedding(token_ids: list[int], weight: torch.Tensor) -> torch.Te
     return rows.mean(dim=0)
 
 
-def initialize_chatml_embeddings(model, instruct_tokenizer) -> None:
+def _chatml_seed_token_ids(tokenizer: PreTrainedTokenizerBase, seed_words: list[str]) -> list[int]:
+    seed_ids: list[int] = []
+    for word in seed_words:
+        seed_ids.extend(tokenizer.encode(word, add_special_tokens=False))
+    return seed_ids
+
+
+def load_instruct_tokenizer(
+    instruct_tokenizer_id: str = DEFAULT_CHATML_INSTRUCT_TOKENIZER,
+) -> PreTrainedTokenizerBase:
+    """load llama instruct tokenizer for chatml (base model tokenizer has no chat_template)."""
+    return AutoTokenizer.from_pretrained(instruct_tokenizer_id)
+
+
+def initialize_chatml_embeddings(model, tokenizer: PreTrainedTokenizerBase) -> None:
     """in-place mean-pool of seed rows into chatml marker rows in embed_tokens and lm_head."""
     embed = model.get_input_embeddings().weight
     lm_head = model.get_output_embeddings().weight
-    assert embed.shape[0] == len(instruct_tokenizer), (
-        f"vocab size mismatch: embed={embed.shape[0]} tok={len(instruct_tokenizer)}"
+    assert embed.shape[0] == len(tokenizer), (
+        f"vocab size mismatch: embed={embed.shape[0]} tok={len(tokenizer)}"
     )
     print(f"vocab size ok: {embed.shape[0]}")
 
     print("\ninitializing chatml token rows via mean-pool:")
     with torch.no_grad():
         for marker, seed_words in CHATML_TOKEN_SEEDS.items():
-            marker_id = instruct_tokenizer.convert_tokens_to_ids(marker)
-            if marker_id is None or marker_id == instruct_tokenizer.unk_token_id:
+            marker_id = single_token_id(tokenizer, marker)
+            if marker_id is None or marker_id == tokenizer.unk_token_id:
                 print(f"  skip {marker}: not in vocab")
                 continue
 
-            seed_ids: list[int] = []
-            for word in seed_words:
-                ids = instruct_tokenizer.encode(word, add_special_tokens=False)
-                seed_ids.extend(ids)
-
+            seed_ids = _chatml_seed_token_ids(tokenizer, seed_words)
             if not seed_ids:
                 print(f"  skip {marker}: no seed ids")
                 continue
@@ -66,27 +79,29 @@ def initialize_chatml_embeddings(model, instruct_tokenizer) -> None:
 def run_initialize_chatml_embeddings(
     base_model_id: str,
     *,
-    instruct_tokenizer_id: str,
+    instruct_tokenizer_id: str = DEFAULT_CHATML_INSTRUCT_TOKENIZER,
     output_dir: str | Path,
     repo_id: str | None = None,
-    private: bool = False,
 ) -> None:
-    print(f"loading base model: {base_model_id}")
+    # model weights: embed_tokens / lm_head rows are updated in place.
+    print(f"loading base model weights: {base_model_id}")
     model = AutoModelForCausalLM.from_pretrained(
         base_model_id,
         torch_dtype=torch.bfloat16,
         device_map="auto",
     )
 
-    print(f"loading instruct tokenizer: {instruct_tokenizer_id}")
-    instruct_tok = AutoTokenizer.from_pretrained(instruct_tokenizer_id)
+    # replace base tokenizer with llama instruct (chat_template required for chatml training).
+    print(f"replacing base tokenizer with instruct tokenizer: {instruct_tokenizer_id}")
+    tokenizer = load_instruct_tokenizer(instruct_tokenizer_id)
 
-    initialize_chatml_embeddings(model, instruct_tok)
+    print("\ninitializing chatml marker embeddings...")
+    initialize_chatml_embeddings(model, tokenizer)
 
     out = Path(output_dir)
     print(f"\nsaving to {out}")
     model.save_pretrained(out)
-    instruct_tok.save_pretrained(out)
+    tokenizer.save_pretrained(out)
 
     if not repo_id:
         print("done (no --repo-id; skipped hub push).")
@@ -97,7 +112,7 @@ def run_initialize_chatml_embeddings(
         f"chatml embedding init from base {base_model_id} "
         f"(tokenizer {instruct_tokenizer_id})"
     )
-    model.push_to_hub(repo_id, commit_message=commit_message, private=private)
-    instruct_tok.push_to_hub(repo_id, commit_message=commit_message, private=private)
+    model.push_to_hub(repo_id, commit_message=commit_message)  # type: ignore[call-arg]
+    tokenizer.push_to_hub(repo_id, commit_message=commit_message)  # type: ignore[call-arg]
     print("pushed.")
     print("done.")

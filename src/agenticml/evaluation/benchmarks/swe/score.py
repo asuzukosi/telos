@@ -7,12 +7,12 @@ import os
 from pathlib import Path
 from typing import Any, Optional
 
-from telos.evaluation.benchmarks.common import model_dir_name, repo_root
-from telos.evaluation.benchmarks.swe.common import ensure_swebench_importable
-from telos.evaluation.benchmarks.swe.io import write_preds
-from telos.evaluation.benchmarks.swe.subset import SWE_LITE_DATASET, SWE_LITE_SPLIT
-from telos.evaluation.benchmarks.suite import SuiteScore
-from telos.evaluation.harness.task import TaskResult, TaskTiming, TaskTokens
+from agenticml.evaluation.benchmarks.common import model_dir_name, repo_root
+from agenticml.evaluation.benchmarks.swe.common import ensure_swebench_importable
+from agenticml.evaluation.benchmarks.swe.io import write_preds
+from agenticml.evaluation.benchmarks.swe.subset import SWE_LITE_DATASET, SWE_LITE_SPLIT
+from agenticml.evaluation.benchmarks.suite import SuiteScore
+from agenticml.evaluation.harness.task import TaskResult, TaskTiming, TaskTokens
 
 
 def _parse_report(
@@ -78,7 +78,7 @@ def score(
 
     preds_path = write_preds(model_dir / "preds.json", rows, model_id=model_id)
     instance_ids = [str(r["instance_id"]) for r in rows]
-    rid = run_id or f"{slug}-telos-swe"
+    rid = run_id or f"{slug}-agenticml-swe"
 
     report_path: Optional[Path] = None
     if run_grader:
@@ -103,7 +103,7 @@ def score(
         "preds_path": str(preds_path),
         "report_path": str(report_path) if report_path else None,
     }
-    (model_dir / "telos_subset_summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+    (model_dir / "agenticml_subset_summary.json").write_text(json.dumps(summary, indent=2) + "\n")
 
     n = len(rows)
     return SuiteScore(

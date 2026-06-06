@@ -1,1 +1,1 @@
-# telos package
+# agenticml package

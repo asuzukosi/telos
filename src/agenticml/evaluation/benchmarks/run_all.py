@@ -6,19 +6,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
-from telos.evaluation.benchmarks.common import repo_root
-from telos.evaluation.benchmarks.run import SUITES, run_suite
-from telos.evaluation.harness.task import BenchmarkResult
-
-DEFAULT_TELLOS_MODEL = "kosiasuzu/telos-llama3.1-8b-lora-merged"
-DEFAULT_CHATML_MODEL = "kosiasuzu/chatml-llama3.1-8b-lora-merged"
+from agenticml.constants import DEFAULT_AGENTICML_MERGED_MODEL, DEFAULT_CHATML_MERGED_MODEL
+from agenticml.evaluation.benchmarks.common import repo_root
+from agenticml.evaluation.benchmarks.run import SUITES, run_suite
+from agenticml.evaluation.harness.task import BenchmarkResult
 
 MATRIX_SUITES = ("bfcl", "toolbench", "swe", "format_validity")
-MATRIX_FORMATS = ("telos", "chatml")
+MATRIX_FORMATS = ("agenticml", "chatml")
 
 DEFAULT_MODELS: dict[str, str] = {
-    "telos": DEFAULT_TELLOS_MODEL,
-    "chatml": DEFAULT_CHATML_MODEL,
+    "agenticml": DEFAULT_AGENTICML_MERGED_MODEL,
+    "chatml": DEFAULT_CHATML_MERGED_MODEL,
 }
 
 

@@ -1,13 +1,15 @@
-"""tests for telos.trajectory."""
+"""tests for agenticml.trajectory."""
 import pytest
 
-from telos.constants import FrameType
-from telos.frames import Frame, action, goal, mission
-from telos.trajectory import Trajectory
+from agenticml.constants import FrameType
+from agenticml.frames import Frame, action, end, goal, mission, result
+from agenticml.trajectory import Trajectory
 
-def test_rejects_end_frame_dict():
-    with pytest.raises(ValueError, match="not a stored frame"):
-        Trajectory([{"type": "end", "content": None}])
+def test_accepts_end_frame_dict():
+    t = Trajectory([{"type": "end", "content": None}])
+    assert len(t) == 1
+    assert t[0].type is FrameType.END
+    assert t[0].content is None
 
 
 def test_empty_trajectory():
@@ -82,6 +84,7 @@ def test_round_trip_dict_to_dict():
     original = [
         {"type": "goal", "content": "g"},
         {"type": "action", "content": {"tool": "x"}},
+        {"type": "end", "content": ""},
     ]
     t = Trajectory(original)
     assert t.to_dict() == original
@@ -188,3 +191,19 @@ def test_inequality_with_non_trajectory():
 def test_repr_contains_trajectory():
     t = Trajectory([goal("g")])
     assert "Trajectory" in repr(t)
+
+
+def test_preserves_explicit_end_between_action_and_result():
+    t = Trajectory([
+        goal("g"),
+        action({"tool": "bash", "command": "ls"}),
+        end(),
+        result({"tool": "bash", "value": "out"}),
+    ])
+    types = [f.type for f in t]
+    assert types == [
+        FrameType.GOAL,
+        FrameType.ACTION,
+        FrameType.END,
+        FrameType.RESULT,
+    ]

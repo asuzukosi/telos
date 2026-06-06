@@ -7,27 +7,24 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Optional, TypeVar, cast
 
-from telos.constants import TERMINAL_TOOLS
-from telos.evaluation.benchmarks.bfcl.subset import ensure_bfcl_on_path
-from telos.evaluation.benchmarks.common import model_dir_name
+from agenticml.constants import TERMINAL_TOOLS
+from agenticml.evaluation.benchmarks.bfcl.subset import ensure_bfcl_on_path
+from agenticml.evaluation.benchmarks.common import model_dir_name
 
 TState = TypeVar("TState")
 
 RETRY_INJECT_MSG = "Error: simulated tool failure. Retry with a corrected call."
 
 
-def execution_result_frame(execution_result: str) -> dict[str, Any]:
-    """map bfcl mock-api json to a telos result frame (ok=0 when the payload has error)."""
+def tool_name_from_call_string(call_string: str) -> str:
+    name = (call_string or "").split("(", 1)[0].strip()
+    return name or "unknown"
+
+
+def execution_result_frame(execution_result: str, tool: str) -> dict[str, Any]:
+    """map bfcl mock-api output to an agenticml result frame."""
     text = (execution_result or "").strip()
-    if not text:
-        return {"ok": 1, "value": text}
-    try:
-        parsed = json.loads(text)
-        if isinstance(parsed, dict) and parsed.get("error") is not None:
-            return {"ok": 0, "value": text}
-    except json.JSONDecodeError:
-        pass
-    return {"ok": 1, "value": text}
+    return {"tool": tool, "value": text if text else None}
 
 
 def functions_to_schemas(functions: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
@@ -101,7 +98,7 @@ def encode_result(
         return actions_to_result(actions, entry_id)
     if "irrelevance" in entry_id:
         return "[]"
-    from telos.evaluation.harness.chatml_fc import strip_chat_generation_tokens
+    from agenticml.evaluation.harness.chatml_fc import strip_chat_generation_tokens
 
     text = strip_chat_generation_tokens(raw)
     return "[]" if not text else text
@@ -134,7 +131,7 @@ class BFCLStep:
 
 
 def _decode_name_parameters_result(result: str) -> list[dict]:
-    from telos.evaluation.harness.chatml_fc import strip_chat_generation_tokens
+    from agenticml.evaluation.harness.chatml_fc import strip_chat_generation_tokens
 
     text = strip_chat_generation_tokens(result)
     if not text or text == "[]":

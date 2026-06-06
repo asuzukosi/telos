@@ -1,21 +1,27 @@
 """
-telos sdk for stateless trajectory advancement
-the public entry point is `step()`. given a trajectory and a tool schema, `step()` advances the trajectory by one generation cycle:
-it injects the tool definitions into the prompt, calls the model, parses the model's output, and returns the extended trajectory.
+agenticml sdk for stateless trajectory advancement.
 
-sdk does not execute tools, when the model emits an action, the caller is responsible for 
-running the tool and appending the result frame before calling `step()` again.
+the public entry point is `step()`. callers build the trajectory (including tool
+definitions in an <|obs|> frame via `with_tool_obs`) before calling `step()`.
+
+sdk does not execute tools. when the model emits an action, the caller runs the
+tool and appends the result frame before calling `step()` again.
 """
 
 from __future__ import annotations
-import json
+
 from dataclasses import dataclass
-from typing import Any, Callable, Optional, Iterable, Union
-from telos.frames import Frame, parse, render
-from telos.constants import FrameType, END_MARKER
-from telos.trajectory import Trajectory, FrameLike
+from typing import Any, Callable, Iterable, Optional, Union
 
+from transformers import PreTrainedTokenizerBase
 
+from agenticml.agentic_template import parse_reserved_wire
+from agenticml.tokenizer_helpers import chat_template_ids
+from agenticml.constants import END_MARKER_TOKEN_ID, FrameType, WIRE_END_MARKER
+from agenticml.frames import obs
+from agenticml.trajectory import FrameLike, Trajectory
+
+_TOOL_OBS_MARKER = "namespace tools {"
 
 
 def _ts_type(spec: dict) -> str:
@@ -36,8 +42,9 @@ def _ts_type(spec: dict) -> str:
         return "object"
     return "any"
 
-def _render_tool_schema(tools: list[dict[str, Any]]) -> str:
-    """ render an openai-style tool schema list to typescript naemspace """
+
+def render_tool_schema(tools: list[dict[str, Any]]) -> str:
+    """render an openai-style tool schema list to a typescript namespace."""
     if not tools:
         return ""
     lines = ["tools:", "namespace tools {"]
@@ -47,15 +54,14 @@ def _render_tool_schema(tools: list[dict[str, Any]]) -> str:
         parameters: dict[str, Any] = t.get("parameters", {})
         properties: dict[str, Any] = parameters.get("properties", {})
         required: list[str] = parameters.get("required", [])
-        
+
         if description:
             lines.append(f" // {description}")
-        # emit a tyepscript-like signature
         if properties:
             lines.append(f" type {name} = (_: {{)")
             for pname, pspec in properties.items():
                 ptype = _ts_type(pspec)
-                optional  = "" if pname in required else "?"
+                optional = "" if pname in required else "?"
                 pdesc = pspec.get("description")
                 if pdesc:
                     lines.append(f"   // {pdesc}")
@@ -66,69 +72,89 @@ def _render_tool_schema(tools: list[dict[str, Any]]) -> str:
     lines.append("}")
     return "\n".join(lines)
 
+
+def has_tool_obs(trajectory: Trajectory) -> bool:
+    """true when the trajectory already has an obs frame with tool definitions."""
+    for frame in trajectory:
+        if frame.type is FrameType.OBS and _TOOL_OBS_MARKER in str(frame.content or ""):
+            return True
+    return False
+
+
+def with_tool_obs(
+    trajectory: Union[Trajectory, Iterable[FrameLike]],
+    tools: Optional[list[dict]] = None,
+) -> Trajectory:
+    """return trajectory with a prelude obs frame for tools when missing."""
+    traj = trajectory if isinstance(trajectory, Trajectory) else Trajectory(trajectory)
+    if not tools or has_tool_obs(traj):
+        return traj
+
+    frames = traj.to_frames()
+    insert_at = 0
+    for i, frame in enumerate(frames):
+        if frame.type is FrameType.GOAL:
+            insert_at = i + 1
+            break
+        insert_at = i + 1
+    frames.insert(insert_at, obs(render_tool_schema(tools)))
+    return Trajectory(frames)
+
+
 GenerateFn = Callable[[list[int], int, int], list[int]]
+
 
 @dataclass
 class StepResult:
-    """
-    return value of `step()`.
-    """
+    """return value of `step()`."""
+
     trajectory: Trajectory
     new_frames: Trajectory
     stopped_on: str
     raw_text: str
 
     def to_dict(self) -> dict:
-        """a dictionary representation of the step result."""
         return {
             "trajectory": self.trajectory.to_dict(),
             "new_frames": self.new_frames.to_dict(),
             "stopped_on": self.stopped_on,
             "raw_text": self.raw_text,
         }
-    
-    def to_json(self) -> str:
-        """a JSON representation of the step result."""
-        return json.dumps(self.to_dict())
+
 
 TrajectoryInput = Union[Trajectory, Iterable[FrameLike]]
- 
+
+
 def step(
     trajectory: TrajectoryInput,
-    tools: Optional[list[dict]] = None,
     *,
-    tokenizer,
+    tokenizer: PreTrainedTokenizerBase,
     generate: GenerateFn,
     max_new_tokens: int = 512,
     strict: bool = True,
 ) -> StepResult:
     """advance the trajectory by one generation cycle."""
     input_traj = trajectory if isinstance(trajectory, Trajectory) else Trajectory(trajectory)
- 
-    # build the prompt: original trajectory + tool definitions <|obs|>.
-    prompt_frames = input_traj.to_frames()
-    if tools:
-        tool_body = _render_tool_schema(tools)
-        prompt_frames.append(Frame(type=FrameType.OBS, content=tool_body))
- 
-    prompt_text = render(prompt_frames)
-    prompt_ids = tokenizer.encode(prompt_text)
- 
-    # generate.
-    new_ids = generate(prompt_ids, tokenizer.end_id, max_new_tokens)
 
-    # determine stop reason.
-    if new_ids and new_ids[-1] == tokenizer.end_id:
-        stopped_on = END_MARKER
+    prompt_ids = chat_template_ids(
+        tokenizer,
+        input_traj.to_dict(),
+        add_generation_prompt=False,
+        add_special_tokens=False,
+    )
+
+    new_ids = generate(prompt_ids, END_MARKER_TOKEN_ID, max_new_tokens)
+
+    if new_ids and new_ids[-1] == END_MARKER_TOKEN_ID:
+        stopped_on = WIRE_END_MARKER
     elif len(new_ids) >= max_new_tokens:
         stopped_on = "max_tokens"
     else:
         stopped_on = "other"
- 
-    # decode and parse the new tokens.
+
     raw_text = tokenizer.decode(new_ids)
     try:
-        new_frame_objs = parse(raw_text, strict=strict)
+        new_frame_objs = parse_reserved_wire(raw_text, strict=strict)
     except Exception as e:
         return StepResult(
             trajectory=input_traj,
@@ -136,12 +162,10 @@ def step(
             stopped_on=f"parse_error: {e}",
             raw_text=raw_text,
         )
- 
+
     new_traj = Trajectory(new_frame_objs)
-    extended = input_traj + new_traj
- 
     return StepResult(
-        trajectory=extended,
+        trajectory=input_traj + new_traj,
         new_frames=new_traj,
         stopped_on=stopped_on,
         raw_text=raw_text,

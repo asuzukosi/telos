@@ -3,9 +3,9 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "telos"
+name = "agenticml"
 version = "0.1.0"
-description = "agent-native trajectory format (telos markers on llama-3.1 reserved specials), sdk, and reference runtime."
+description = "agent-native trajectory format (agenticml markers on llama-3.1 reserved specials), sdk, and reference runtime."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
-telos = "telos.cli.main:main"
+agenticml = "agenticml.cli.main:main"
 
 [project.optional-dependencies]
 train = [
@@ -30,11 +30,10 @@ train = [
 eval = [
     "torch>=2.0",
     "datasets",
-    "peft",
     "tqdm",
 ]
 eval-benchmarks = [
-    "telos[eval]",
+    "agenticml[eval]",
     "swebench>=2.1.0",
     "bfcl_eval @ file:third_party/gorilla/berkeley-function-call-leaderboard",
 ]
@@ -48,12 +47,6 @@ data-gen = [
 ]
 dev = [
     "pytest>=7",
-]
-llm-scripts = [
-    "torch>=2.0",
-]
-tokenizer-numpy = [
-    "numpy>=1.24",
 ]
 
 [tool.setuptools.packages.find]

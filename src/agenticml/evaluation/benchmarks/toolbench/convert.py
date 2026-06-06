@@ -1,12 +1,12 @@
-"""convert telos toolbench rows to upstream tooleval answer format."""
+"""convert agenticml toolbench rows to upstream tooleval answer format."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from telos.dataset_prep.telos_to_chatml import telos_to_chatml
-from telos.evaluation.benchmarks.toolbench.common import ensure_toolbench_on_path
-from telos.evaluation.harness.backends.telos_backend import BackendRunResult
+from agenticml.bridge import bridge
+from agenticml.evaluation.benchmarks.toolbench.common import ensure_toolbench_on_path
+from agenticml.evaluation.harness.backends.agenticml_backend import BackendRunResult
 
 
 def _execution_types():
@@ -98,12 +98,12 @@ def trace_messages(run: BackendRunResult) -> list[dict[str, Any]]:
     if run.messages:
         return list(run.messages)
     if run.run is not None:
-        return telos_to_chatml(run.run.trajectory.to_dict())
+        return bridge.trajectory_to_messages(run.run.trajectory)
     return []
 
 
 def method_name(fmt: str) -> str:
-    return "Telos_ChatML" if fmt == "chatml" else "Telos_CoT"
+    return "AgenticML_ChatML" if fmt == "chatml" else "AgenticML_CoT"
 
 
 def row_to_converted(row: dict[str, Any]) -> dict[str, Any] | None:
@@ -113,7 +113,7 @@ def row_to_converted(row: dict[str, Any]) -> dict[str, Any] | None:
     if not query or not functions or not messages:
         return None
 
-    fmt = str(row.get("format") or "telos")
+    fmt = str(row.get("format") or "agenticml")
     eg = messages_to_execution_graph(query, functions, messages)
     final_answer = row.get("final_answer")
     if final_answer is None:

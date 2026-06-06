@@ -1,15 +1,15 @@
 # swe-bench-lite eval (ops)
 
-**SWE-bench-Lite** runs through [mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent) and grades with upstream [swebench](https://github.com/princeton-nlp/SWE-bench) `run_evaluation`. Telos and ChatML each get a model adapter; the agent loop and grader stay upstream.
+**SWE-bench-Lite** runs through [mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent) and grades with upstream [swebench](https://github.com/princeton-nlp/SWE-bench) `run_evaluation`. AgenticML and ChatML each use a **merged** checkpoint with format-specific backends (`AgenticMLBackend` / `ChatMLBackend`); the docker agent loop and grader stay upstream.
 
 ## subset
 
-Pinned instance IDs live in `SUBSET_IDS` in [`swe/subset.py`](../src/telos/evaluation/benchmarks/swe/subset.py): **30** tasks sampled with seed 42 from `princeton-nlp/SWE-Bench_Lite` / `test` (300 total).
+Pinned instance IDs live in `SUBSET_IDS` in [`swe/subset.py`](../src/agenticml/evaluation/benchmarks/swe/subset.py): **30** tasks sampled with seed 42 from `princeton-nlp/SWE-Bench_Lite` / `test` (300 total).
 
-Loader: `telos.evaluation.benchmarks.swe.subset` (`load_subset_ids`, `load_subset`, `load_entries`).
+Loader: `agenticml.evaluation.benchmarks.swe.subset` (`load_subset_ids`, `load_subset`, `load_entries`).
 
 ```python
-from telos.evaluation.benchmarks.swe.subset import load_subset
+from agenticml.evaluation.benchmarks.swe.subset import load_subset
 
 subset = load_subset()
 print(subset.instance_ids[0], subset.entries[0]["repo"])
@@ -20,7 +20,7 @@ print(subset.instance_ids[0], subset.entries[0]["repo"])
 Per-step action logs (bash command + truncated output):
 
 ```bash
-SWE_VERBOSE=1 telos eval-benchmarks --suite swe --format telos --model <model> --num-examples 1 --no-score
+SWE_VERBOSE=1 agenticml eval-benchmarks --suite swe --format agenticml --model <model> --num-examples 1 --no-score
 ```
 
 Other signals while a run is in flight:
@@ -61,7 +61,7 @@ git submodule update --init --recursive
 ## docker
 
 - Eval **requires Docker** (or Singularity on HPC — see mini-swe-agent docs).
-- The user running `telos` must access Docker **without sudo** (`docker ps` works in the same shell).
+- The user running `agenticml` must access Docker **without sudo** (`docker ps` works in the same shell).
 - `docker run` **exit 126** — permission denied on `/var/run/docker.sock` (`sudo usermod -aG docker $USER`, re-login).
 - `docker run` **exit 125** + `containerd.sock: connection refused` — **containerd is down**. Fix before eval:
 
@@ -74,12 +74,12 @@ sudo systemctl start containerd && sudo systemctl start docker
 sudo systemctl status containerd   # must be active (running)
 ```
 
-- **Pre-pull instance images** before `telos eval-benchmarks --suite swe`. First pull can take 10–30+ minutes per image; `docker run` during eval only waits ~600s.
+- **Pre-pull instance images** before `agenticml eval-benchmarks --suite swe`. First pull can take 10–30+ minutes per image; `docker run` during eval only waits ~600s.
 
 ```bash
 python -c "
-from telos.evaluation.benchmarks.swe.env import pull_instance_image
-from telos.evaluation.benchmarks.swe.subset import load_entries
+from agenticml.evaluation.benchmarks.swe.env import pull_instance_image
+from agenticml.evaluation.benchmarks.swe.subset import load_entries
 for e in load_entries(2, seed=42):
     print('pulling', e['instance_id'])
     pull_instance_image(e)
@@ -122,31 +122,31 @@ python -m swebench.harness.run_evaluation \
   --split test \
   --predictions_path /path/to/preds.jsonl \
   --max_workers 4 \
-  --run_id telos-swe-smoke
+  --run_id agenticml-swe-smoke
 ```
 
 Logs: `logs/run_evaluation/` under the working directory. Primary metric: **resolved rate** (instance-level pass).
 
-## telos harness
+## agenticml harness
 
-- Subset: `telos.evaluation.benchmarks.swe.subset`
+- Subset: `agenticml.evaluation.benchmarks.swe.subset`
 - Prelude: `instance_to_prelude` builds goal/mission from `problem_statement` + SWE instructions
-- Tools: `registry_from_env` maps telos `bash` actions to mini-swe `env.execute` (captures `COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT` as `model_patch`)
-- Loop: `run_telos_swe(backend, bridge, instance)` drives `TelosBackend.step` until submit or limit
-- Task entry: `telos.run_one_task` / `chatml.run_one_task` wire docker env + loop; `io.pred_entry` for `preds.json`
-- Grading: `telos.evaluation.benchmarks.swe.score` writes `preds.json`, calls `swebench.harness.run_evaluation`, and reads resolved rate from the upstream report
+- Tools: `registry_from_env` maps agenticml `bash` actions to mini-swe `env.execute` (captures `COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT` as `model_patch`)
+- Loop: `run_agenticml_swe(backend, bridge, instance)` drives `AgenticMLBackend.step` until submit or limit
+- Task entry: `agenticml.evaluation.benchmarks.swe.agenticml.run_one_task` / `swe.chatml.run_one_task` wire docker env + loop; `io.pred_entry` for `preds.json`
+- Grading: `agenticml.evaluation.benchmarks.swe.score` writes `preds.json`, calls `swebench.harness.run_evaluation`, and reads resolved rate from the upstream report
 
 CLI:
 
 ```bash
 # inference only (no docker grader) — smoke with 3 instances
-telos eval-benchmarks --suite swe --format telos --model <model> --num-examples 3 --no-score
+agenticml eval-benchmarks --suite swe --format agenticml --model <model> --num-examples 3 --no-score
 
 # full run: agent loop + swebench grader
-telos eval-benchmarks --suite swe --format telos --model <model> --num-examples 3
+agenticml eval-benchmarks --suite swe --format agenticml --model <model> --num-examples 3
 
 # grade existing result rows
-telos eval-benchmarks --suite swe --format telos --model <model> --score-only
+agenticml eval-benchmarks --suite swe --format agenticml --model <model> --score-only
 ```
 
 Output: `results/benchmarks/swe/<format>/summary.json` (envelope), per-instance rows under `results/benchmarks/swe/<model_slug>/`, grader artifacts under `results/benchmarks/swe/score/<model_slug>/`.
@@ -154,6 +154,6 @@ Output: `results/benchmarks/swe/<format>/summary.json` (envelope), per-instance 
 ## smoke checklist
 
 1. `docker info` succeeds.
-2. `python -c "from telos.evaluation.benchmarks.swe.subset import load_subset; print(len(load_subset().entries))"` → `30`.
+2. `python -c "from agenticml.evaluation.benchmarks.swe.subset import load_subset; print(len(load_subset().entries))"` → `30`.
 3. `mini-extra swebench-single --subset lite --split test -i astropy__astropy-14995 ...` completes one trajectory (optional).
 4. Grade a tiny preds file with `run_evaluation` (optional).

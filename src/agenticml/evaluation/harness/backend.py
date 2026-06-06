@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Optional, Protocol, runtime_checkable
 
-from telos.runtime.tools import ToolRegistry
-from telos.sdk import StepResult
-from telos.runtime.runtime import RunResult
-from telos.trajectory import Trajectory
+from agenticml.runtime.tools import ToolRegistry
+from agenticml.sdk import StepResult
+from agenticml.runtime.runtime import RunResult
+from agenticml.trajectory import Trajectory
 
 
 @dataclass
@@ -48,7 +48,6 @@ class ModelBackend(Protocol):
     def step(
         self,
         trajectory: Trajectory | list[dict],
-        tools: Optional[list[dict]] = None,
         *,
         max_new_tokens: int = 512,
         strict: bool = True,

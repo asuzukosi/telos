@@ -4,27 +4,54 @@ from __future__ import annotations
 
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
 from tqdm import tqdm
 
-from telos.evaluation.benchmarks.common import sample_entries
-from telos.evaluation.harness.aggregate import aggregate_efficiency
-from telos.evaluation.harness.runner import write_benchmark
-from telos.evaluation.harness.task import BenchmarkResult, BenchmarkRunMeta, TaskResult
+from agenticml.evaluation.benchmarks.common import sample_entries
+from agenticml.evaluation.harness.aggregate import aggregate_efficiency
+from agenticml.evaluation.harness.backends.agenticml_backend import AgenticMLBackend
+from agenticml.evaluation.harness.backends.chatml_backend import ChatMLBackend
+from agenticml.evaluation.harness.runner import write_benchmark
+from agenticml.evaluation.harness.task import BenchmarkResult, BenchmarkRunMeta, TaskResult
 
 
 @dataclass
 class RunContext:
     model_id: str
     format: str
-    adapter_mode: str = "merged"
-    adapter_id: Optional[str] = None
     max_new_tokens: int = 512
     inject_retry_failure: bool = False
     max_iterations: Optional[int] = None
+
+
+def create_eval_backend(ctx: RunContext) -> AgenticMLBackend | ChatMLBackend:
+    factory = (
+        AgenticMLBackend.from_pretrained
+        if ctx.format == "agenticml"
+        else ChatMLBackend.from_pretrained
+    )
+    return factory(ctx.model_id)
+
+
+def run_format_task(
+    backend: AgenticMLBackend | ChatMLBackend,
+    entry: dict[str, Any],
+    ctx: RunContext,
+    *,
+    agenticml_run: Callable[..., dict[str, Any]],
+    chatml_run: Callable[..., dict[str, Any]],
+) -> dict[str, Any]:
+    if ctx.format == "agenticml":
+        if not isinstance(backend, AgenticMLBackend):
+            raise TypeError(f"expected AgenticMLBackend, got {type(backend).__name__}")
+        return agenticml_run(backend, entry, ctx)
+    if not isinstance(backend, ChatMLBackend):
+        raise TypeError(f"expected ChatMLBackend, got {type(backend).__name__}")
+    return chatml_run(backend, entry, ctx)
 
 
 @dataclass
@@ -178,12 +205,10 @@ class BenchmarkSuite(ABC):
             suite=self.name,
             model=ctx.model_id,
             format=ctx.format,
-            adapter_mode=ctx.adapter_mode,
             dataset=self.dataset_label(dataset),
             split=self.result_split(),
             num_run=len(entries),
             sample_seed=sample_seed,
-            adapter_id=ctx.adapter_id,
         )
         result = BenchmarkResult(
             meta=meta,

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from telos.evaluation.benchmarks.toolbench.cache import (
+from agenticml.evaluation.benchmarks.toolbench.cache import (
     CachedToolEnv,
     _read_response_cache,
     _write_response_cache,
@@ -65,7 +65,7 @@ def test_call_tool_local_uses_cache_without_upstream(monkeypatch, data_root: tup
         raise AssertionError("should not import upstream when cache hit")
 
     monkeypatch.setattr(
-        "telos.evaluation.benchmarks.toolbench.cache.ensure_toolbench_on_path",
+        "agenticml.evaluation.benchmarks.toolbench.cache.ensure_toolbench_on_path",
         fail_import,
     )
     _write_response_cache(

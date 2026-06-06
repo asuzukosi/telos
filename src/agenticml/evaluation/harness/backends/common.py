@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from telos.runtime.tools import ToolRegistry
+from agenticml.runtime.tools import ToolRegistry
 
 GenerateFn = Callable[[list[int], int, int], list[int]]
 

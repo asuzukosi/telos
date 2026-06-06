@@ -1,13 +1,11 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Callable
-from telos.constants import FrameType
-from telos.frames import Frame
-from telos.sdk import step
-from telos.trajectory import Trajectory
-from telos.runtime.tools import ToolError, ToolRegistryLike
-
-terminal_tools = {"answer", "fail"}
+from agenticml.constants import FrameType, TERMINAL_TOOLS
+from agenticml.frames import Frame
+from agenticml.sdk import step, with_tool_obs
+from agenticml.trajectory import Trajectory
+from agenticml.runtime.tools import ToolError, ToolRegistryLike
 
 GenerateFn = Callable[[list[int], int, int], list[int]]
 
@@ -53,13 +51,14 @@ def run(
         generate: the generate function
         max_iterations: the maximum number of iterations to run
     """
-    traj = trajectory if isinstance(trajectory, Trajectory) else Trajectory(trajectory)
-    tool_schemas = registry.schemas()
+    traj = with_tool_obs(
+        trajectory if isinstance(trajectory, Trajectory) else Trajectory(trajectory),
+        registry.schemas(),
+    )
 
     for iteration in range(1, max_iterations + 1):
         step_result = step(
-            traj, 
-            tool_schemas, 
+            traj,
             tokenizer=tokenizer,
             generate=generate,
             max_new_tokens=max_new_tokens,
@@ -87,25 +86,28 @@ def run(
 
         for action_frame in actions:
             tool_name = (action_frame.content or {}).get("tool")
-            if tool_name in terminal_tools:
+            if tool_name in TERMINAL_TOOLS:
                 terminal_hit = True
                 if tool_name == "answer":
                     terminal_answer = action_frame.content.get("text")
                 
-                traj.append(Frame(FrameType.RESULT, content={"ok": 1, "value": None}))
+                traj.append(Frame(
+                    type=FrameType.RESULT,
+                    content={"tool": tool_name, "value": None},
+                ))
                 break
             # execute the tool.
             args = {k: v for k, v in (action_frame.content or {}).items() if k != "tool"}
             try:
-                value = registry.call(tool_name, args)
+                value = registry.call(str(tool_name), args)
                 traj.append(Frame(
                     type=FrameType.RESULT,
-                    content={"ok": 1, "value": value},
+                    content={"tool": tool_name, "value": value},
                 ))
             except ToolError as e:
                 traj.append(Frame(
                     type=FrameType.RESULT,
-                    content={"ok": 0, "value": str(e)},
+                    content={"tool": tool_name, "value": str(e)},
                 ))
  
         if terminal_hit:

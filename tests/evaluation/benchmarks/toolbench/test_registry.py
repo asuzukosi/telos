@@ -2,9 +2,9 @@ import json
 
 import pytest
 
-from telos.evaluation.benchmarks.toolbench.cache import CachedToolEnv
-from telos.evaluation.benchmarks.toolbench.registry import registry_from_env
-from telos.runtime.tools import ToolError
+from agenticml.evaluation.benchmarks.toolbench.cache import CachedToolEnv
+from agenticml.evaluation.benchmarks.toolbench.registry import registry_from_env
+from agenticml.runtime.tools import ToolError
 
 
 def _entry() -> dict:

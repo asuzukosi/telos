@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from telos.evaluation.harness.aggregate import aggregate_efficiency
-from telos.evaluation.harness.runner import run_tasks, write_benchmark
-from telos.evaluation.harness.task import BenchmarkRunMeta, EvalTask, TaskResult, TaskTiming, TaskTokens
+from agenticml.evaluation.harness.aggregate import aggregate_efficiency
+from agenticml.evaluation.harness.runner import run_tasks, write_benchmark
+from agenticml.evaluation.harness.task import BenchmarkRunMeta, EvalTask, TaskResult, TaskTiming, TaskTokens
 
 
 def test_aggregate_efficiency():
@@ -20,7 +20,7 @@ def test_aggregate_efficiency():
 
 
 def test_run_tasks(tmp_path: Path):
-    meta = BenchmarkRunMeta("test", "m", "telos", "merged", "ds", "eval", 2)
+    meta = BenchmarkRunMeta("test", "m", "agenticml", "merged", "ds", "eval", 2)
     tasks = [EvalTask("1", "d", []), EvalTask("2", "d", [])]
 
     def evaluate(task: EvalTask) -> TaskResult:

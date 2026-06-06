@@ -8,24 +8,24 @@ import re
 from collections import defaultdict
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional, cast
-
+from typing import Any, Callable, Optional
 import torch
-from transformers import AutoTokenizer, PreTrainedTokenizerBase
+from transformers import AutoTokenizer, PreTrainedModel, PreTrainedTokenizerBase
 
-from telos.evaluation.harness.load import model_device
-from telos.evaluation.harness.task import TaskResult, TaskTiming, TaskTokens
-from telos.frames import parse as telos_parse, render as telos_render
-from telos.tokenizer import TelosTokenizer
-from telos.trajectory import Trajectory
-from telos.validators import validate_for_model_generation
-
-TELOS_MODEL_TYPES = frozenset({"belief", "plan", "think", "action"})
-_TOOL_CALL_RE = re.compile(r"<\|python_tag\|>(.+?)<\|(?:eom_id|eot_id)\|>", re.DOTALL)
-_ASSISTANT_TEXT_RE = re.compile(
-    r"(?:<\|start_header_id\|>assistant<\|end_header_id\|>)?\s*(.*?)<\|(?:eot_id|eom_id)\|>",
-    re.DOTALL,
+from agenticml.bridge import bridge
+from agenticml.evaluation.harness.load import as_causal_lm, model_device
+from agenticml.evaluation.harness.task import TaskResult, TaskTiming, TaskTokens
+from agenticml.agentic_template import parse_reserved_wire
+from agenticml.trajectory import Trajectory
+from agenticml.tokenizer_helpers import (
+    agenticml_stop_token_ids,
+    chat_template_ids,
+    chatml_stop_token_ids,
+    pad_token_id,
 )
+from agenticml.validators import validate
+
+AGENTICML_MODEL_TYPES = frozenset({"belief", "plan", "think", "action"})
 
 
 @dataclass
@@ -50,11 +50,7 @@ class _FormatSpec:
     stop_token_ids: Callable[[Any], list[int]]
 
 
-def _telos_load_tokenizer(model_id: str) -> TelosTokenizer:
-    return TelosTokenizer.from_pretrained(model_id)
-
-
-def _chatml_load_tokenizer(model_id: str) -> PreTrainedTokenizerBase:
+def _load_tokenizer(model_id: str) -> PreTrainedTokenizerBase:
     return AutoTokenizer.from_pretrained(model_id)
 
 
@@ -67,13 +63,13 @@ def _loads_field(value: Any) -> Any:
 def _row_evaluable(row: dict, fmt: str) -> bool:
     """row has the columns and content needed to run generation for this format."""
     try:
-        if fmt == "telos":
+        if fmt == "agenticml":
             if "frames" not in row:
                 return False
             frames = _loads_field(row["frames"])
             if not isinstance(frames, list) or not frames:
                 return False
-            cut = _telos_cut_index(frames)
+            cut = _agenticml_cut_index(frames)
             return cut < len(frames)
         if "messages" not in row:
             return False
@@ -85,40 +81,24 @@ def _row_evaluable(row: dict, fmt: str) -> bool:
         return False
 
 
-def _telos_cut_index(frames: list[dict]) -> int:
+def _agenticml_cut_index(frames: list[dict]) -> int:
     return next(
-        (i for i, f in enumerate(frames) if f.get("type") in TELOS_MODEL_TYPES),
+        (i for i, f in enumerate(frames) if f.get("type") in AGENTICML_MODEL_TYPES),
         len(frames),
     )
 
 
-def _telos_prelude_frames(frames: list[dict], cut: int) -> list:
-    """dataset frames use short type names (goal); Trajectory coerces to FrameType."""
-    prelude_dicts = [f for f in frames[:cut] if f.get("type") != "end"]
-    return Trajectory(prelude_dicts).to_frames()
-
-
-def _telos_input_ids(row: dict, tt: TelosTokenizer) -> list[int]:
+def _agenticml_input_ids(row: dict, tokenizer: PreTrainedTokenizerBase) -> list[int]:
     frames = _loads_field(row["frames"])
-    cut = _telos_cut_index(frames)
+    cut = _agenticml_cut_index(frames)
     if cut >= len(frames):
         return []
-    return tt.encode(telos_render(_telos_prelude_frames(frames, cut)))
-
-
-def _telos_decode_output(tt: TelosTokenizer, token_ids: list[int]) -> str:
-    return tt.decode(token_ids)
-
-
-def _telos_pad_token_id(tt: TelosTokenizer) -> int:
-    hf = tt.hf
-    pad = hf.pad_token_id
-    if isinstance(pad, int):
-        return pad
-    eos = hf.eos_token_id
-    if isinstance(eos, int):
-        return eos
-    raise ValueError("tokenizer has no pad_token_id or eos_token_id")
+    return chat_template_ids(
+        tokenizer,
+        Trajectory(frames[:cut]).to_dict(),
+        add_generation_prompt=False,
+        add_special_tokens=False,
+    )
 
 
 def _chatml_input_ids(row: dict, tokenizer: PreTrainedTokenizerBase) -> list[int]:
@@ -129,67 +109,26 @@ def _chatml_input_ids(row: dict, tokenizer: PreTrainedTokenizerBase) -> list[int
     )
     if cut >= len(messages):
         return []
-    encoded = tokenizer.apply_chat_template(
+    return chat_template_ids(
+        tokenizer,
         messages[:cut],
-        tokenize=True,
         add_generation_prompt=True,
     )
-    return list(cast(list[int], encoded))
 
 
-def _chatml_decode_output(tokenizer: PreTrainedTokenizerBase, token_ids: list[int]) -> str:
-    return tokenizer.decode(token_ids, skip_special_tokens=False)
-
-
-def _chatml_pad_token_id(tokenizer: PreTrainedTokenizerBase) -> int:
-    pad = tokenizer.pad_token_id
-    if isinstance(pad, int):
-        return pad
-    eos = tokenizer.eos_token_id
-    if isinstance(eos, int):
-        return eos
-    raise ValueError("tokenizer has no pad_token_id or eos_token_id")
-
-
-def _telos_stop_ids(tt: TelosTokenizer) -> list[int]:
-    ids = [tt.end_id]
-    eos = tt.hf.eos_token_id
-    if isinstance(eos, int) and eos not in ids:
-        ids.append(eos)
-    return ids
-
-
-def _chatml_stop_ids(tokenizer: PreTrainedTokenizerBase) -> list[int]:
-    ids: list[int] = []
-    unk = tokenizer.unk_token_id
-    convert_tokens_to_ids = cast(Callable[[str], int], tokenizer.convert_tokens_to_ids)
-    for token in ("<|eot_id|>", "<|eom_id|>"):
-        raw_tid = convert_tokens_to_ids(token)
-        if isinstance(raw_tid, int) and raw_tid != unk:
-            ids.append(raw_tid)
-    eos = tokenizer.eos_token_id
-    if isinstance(eos, int) and eos not in ids:
-        ids.append(eos)
-    if ids:
-        return ids
-    if isinstance(eos, int):
-        return [eos]
-    raise ValueError("tokenizer has no stop token ids")
-
-
-def _telos_check(row: dict, generated_text: str) -> tuple[bool, bool, Optional[str], list[str]]:
+def _agenticml_check(row: dict, generated_text: str) -> tuple[bool, bool, Optional[str], list[str]]:
     frames = _loads_field(row["frames"])
     try:
-        generated_frames = telos_parse(generated_text, strict=False)
+        generated_frames = parse_reserved_wire(generated_text, strict=False)
     except Exception as e:
         return False, False, f"parse failure: {e}", []
 
-    cut = _telos_cut_index(frames)
-    full = _telos_prelude_frames(frames, cut)
+    cut = _agenticml_cut_index(frames)
+    full = Trajectory(frames[:cut]).to_frames()
     full.extend(generated_frames)
 
     try:
-        violations = validate_for_model_generation(full)
+        violations = validate(full, allow_unresolved_actions_at_end=True)
     except Exception as e:
         return True, False, None, [f"validator crashed: {e}"]
 
@@ -205,22 +144,17 @@ def _chatml_check(_row: dict, generated_text: str) -> tuple[bool, bool, Optional
     if not re.search(r"<\|(?:eot_id|eom_id)\|>", generated_text):
         return False, False, "missing stop token", ["no stop token emitted"]
 
-    has_tool = False
-    m = _TOOL_CALL_RE.search(generated_text)
-    if m:
-        try:
-            call = json.loads(m.group(1).strip())
-            if not isinstance(call, dict):
-                errors.append("tool call payload is not a JSON object")
-            elif "name" not in call:
-                errors.append("tool call missing 'name' field")
-            else:
-                has_tool = True
-        except json.JSONDecodeError as e:
-            return True, False, None, [f"tool call JSON invalid: {e.msg}"]
+    parsed = bridge.parse_chatml_generation(generated_text)
+    if parsed.stop_reason.startswith("parse_error"):
+        return True, False, None, [parsed.stop_reason]
 
-    text_m = _ASSISTANT_TEXT_RE.search(generated_text)
-    has_text = bool(text_m and text_m.group(1).strip())
+    has_tool = parsed.tool_call is not None
+    has_text = bool(parsed.text.strip())
+    if has_tool:
+        if not isinstance(parsed.tool_call, dict):
+            errors.append("tool call payload is not a JSON object")
+        elif "name" not in parsed.tool_call:
+            errors.append("tool call missing 'name' field")
     if not has_tool and not has_text:
         errors.append("generation has no tool call and no text content")
         return True, False, None, errors
@@ -229,29 +163,29 @@ def _chatml_check(_row: dict, generated_text: str) -> tuple[bool, bool, Optional
 
 
 FORMAT_SPECS: dict[str, _FormatSpec] = {
-    "telos": _FormatSpec(
-        _telos_load_tokenizer,
-        _telos_input_ids,
-        _telos_decode_output,
-        _telos_pad_token_id,
-        _telos_check,
-        _telos_stop_ids,
+    "agenticml": _FormatSpec(
+        _load_tokenizer,
+        _agenticml_input_ids,
+        lambda tokenizer, token_ids: tokenizer.decode(token_ids),
+        pad_token_id,
+        _agenticml_check,
+        agenticml_stop_token_ids,
     ),
     "chatml": _FormatSpec(
-        _chatml_load_tokenizer,
+        _load_tokenizer,
         _chatml_input_ids,
-        _chatml_decode_output,
-        _chatml_pad_token_id,
+        lambda tokenizer, token_ids: tokenizer.decode(token_ids, skip_special_tokens=False),
+        pad_token_id,
         _chatml_check,
-        _chatml_stop_ids,
+        chatml_stop_token_ids,
     ),
 }
 
 
 def _generate_completion(
-    model,
+    model: PreTrainedModel,
     spec: _FormatSpec,
-    tokenizer,
+    tokenizer: PreTrainedTokenizerBase,
     input_ids: list[int],
     *,
     max_new_tokens: int = 1024,
@@ -263,7 +197,7 @@ def _generate_completion(
     pad_id = spec.pad_token_id(tokenizer)
     default_eos = stop_token_ids[0] if stop_token_ids else pad_id
     with torch.no_grad():
-        out = model.generate(
+        out = as_causal_lm(model).generate(
             inputs,
             attention_mask=torch.ones_like(inputs),
             max_new_tokens=max_new_tokens,
@@ -277,8 +211,8 @@ def _generate_completion(
 
 def eval_row(
     row: dict,
-    model,
-    tokenizer,
+    model: PreTrainedModel,
+    tokenizer: PreTrainedTokenizerBase,
     spec: _FormatSpec,
     stop_ids: list[int],
     max_new_tokens: int,

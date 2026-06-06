@@ -6,13 +6,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from telos.evaluation.benchmarks.bfcl.suite import BFCLSuite
-from telos.evaluation.benchmarks.format_validity.evaluate import print_summary
-from telos.evaluation.benchmarks.format_validity.suite import FormatValiditySuite
-from telos.evaluation.benchmarks.swe.suite import SWEBenchLiteSuite
-from telos.evaluation.benchmarks.toolbench.suite import ToolBenchSuite
-from telos.evaluation.benchmarks.suite import BenchmarkSuite, RunContext
-from telos.evaluation.harness.task import BenchmarkResult
+from agenticml.evaluation.benchmarks.bfcl.suite import BFCLSuite
+from agenticml.evaluation.benchmarks.format_validity.evaluate import print_summary
+from agenticml.evaluation.benchmarks.format_validity.suite import FormatValiditySuite
+from agenticml.evaluation.benchmarks.swe.suite import SWEBenchLiteSuite
+from agenticml.evaluation.benchmarks.toolbench.suite import ToolBenchSuite
+from agenticml.evaluation.benchmarks.suite import BenchmarkSuite, RunContext
+from agenticml.evaluation.harness.task import BenchmarkResult
 
 
 @dataclass(frozen=True)
@@ -38,8 +38,6 @@ def run_suite(
     output_dir: Optional[Path] = None,
     num_examples: Optional[int] = None,
     sample_seed: int = 42,
-    adapter_mode: str = "merged",
-    adapter_id: Optional[str] = None,
     max_new_tokens: Optional[int] = None,
     max_iterations: Optional[int] = None,
     inject_retry_failure: bool = False,
@@ -51,8 +49,6 @@ def run_suite(
     ctx = RunContext(
         model_id=model_id,
         format=fmt,
-        adapter_mode=adapter_mode,
-        adapter_id=adapter_id,
         max_new_tokens=max_new_tokens or cfg.default_max_new_tokens,
         inject_retry_failure=inject_retry_failure,
         max_iterations=max_iterations,
@@ -68,19 +64,3 @@ def run_suite(
     if name == "format_validity":
         print_summary(result.metrics)
     return result
-
-
-def run_bfcl_suite(model_id: str, fmt: str, **kwargs: Any) -> BenchmarkResult:
-    return run_suite("bfcl", model_id, fmt, **kwargs)
-
-
-def run_format_validity_suite(model_id: str, fmt: str, **kwargs: Any) -> BenchmarkResult:
-    return run_suite("format_validity", model_id, fmt, **kwargs)
-
-
-def run_toolbench_suite(model_id: str, fmt: str, **kwargs: Any) -> BenchmarkResult:
-    return run_suite("toolbench", model_id, fmt, **kwargs)
-
-
-def run_swe_suite(model_id: str, fmt: str, **kwargs: Any) -> BenchmarkResult:
-    return run_suite("swe", model_id, fmt, **kwargs)

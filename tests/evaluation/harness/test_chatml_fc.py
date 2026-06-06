@@ -1,7 +1,7 @@
 import json
 
-from telos.evaluation.benchmarks.bfcl.common import ResultHandler, encode_result
-from telos.evaluation.harness.chatml_fc import parse_chatml_fc_call, strip_chat_generation_tokens
+from agenticml.evaluation.benchmarks.bfcl.common import ResultHandler, encode_result
+from agenticml.evaluation.harness.chatml_fc import parse_chatml_fc_call, strip_chat_generation_tokens
 
 
 def test_strip_chat_generation_tokens():

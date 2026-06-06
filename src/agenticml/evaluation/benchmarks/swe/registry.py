@@ -1,12 +1,12 @@
-"""map mini-swe bash environment to telos ToolRegistry."""
+"""map mini-swe bash environment to agenticml ToolRegistry."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from telos.evaluation.benchmarks.swe.common import BASH_TOOL_SCHEMA, ensure_miniswe_on_path, format_command_output
-from telos.runtime.tools import Tool, ToolError, ToolRegistry
+from agenticml.evaluation.benchmarks.swe.common import BASH_TOOL_SCHEMA, ensure_miniswe_on_path, format_command_output
+from agenticml.runtime.tools import Tool, ToolError, ToolRegistry
 
 
 class BashEnvironment(Protocol):

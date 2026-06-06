@@ -56,12 +56,10 @@ class BenchmarkRunMeta:
     suite: str
     model: str
     format: str
-    adapter_mode: str
     dataset: str
     split: str
     num_run: int
     sample_seed: int = 42
-    adapter_id: Optional[str] = None
 
 
 @dataclass

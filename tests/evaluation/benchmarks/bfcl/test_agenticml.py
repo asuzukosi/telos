@@ -1,13 +1,13 @@
 import json
 
-from telos.evaluation.benchmarks.bfcl.common import (
+from agenticml.evaluation.benchmarks.bfcl.common import (
     ResultHandler,
     actions_to_result,
     entry_tool_schemas,
     functions_to_schemas,
 )
-from telos.evaluation.benchmarks.bfcl.telos import entry_to_prelude
-from telos.evaluation.benchmarks.common import model_dir_name
+from agenticml.evaluation.benchmarks.bfcl.agenticml import entry_to_prelude
+from agenticml.evaluation.benchmarks.common import model_dir_name
 
 
 def test_model_dir_name():
@@ -72,7 +72,7 @@ def test_result_handler_decode_ast():
     import pytest
 
     pytest.importorskip("tree_sitter")
-    from telos.evaluation.benchmarks.bfcl.subset import ensure_bfcl_on_path
+    from agenticml.evaluation.benchmarks.bfcl.subset import ensure_bfcl_on_path
 
     ensure_bfcl_on_path()
     pytest.importorskip("bfcl_eval")

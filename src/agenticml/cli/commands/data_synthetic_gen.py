@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import argparse
 
-from telos.dataset_prep.synthetic_gen import run_synthetic_gen
+from agenticml.dataset_prep.synthetic_gen import run_synthetic_gen
 
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
-        description="generate synthetic telos trajectory jsonl via openrouter",
+        description="generate synthetic agenticml trajectory jsonl via openrouter",
     )
     parser.add_argument("--target", type=int, default=20_000)
     parser.add_argument("--batch", type=int, default=20)

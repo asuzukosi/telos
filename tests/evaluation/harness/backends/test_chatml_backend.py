@@ -1,48 +1,20 @@
 from __future__ import annotations
 import json
-from typing import cast
 import pytest
-from transformers import PreTrainedTokenizerBase
-from telos.evaluation.harness.backend import ModelBackend
-from telos.evaluation.harness.backends import ChatMLBackend
-from telos.evaluation.harness.backends.chatml_backend import _parse, _to_messages
-from telos.runtime import Tool, ToolRegistry
-from telos.runtime.hf_generator import HfGenerator
-from telos.trajectory import Trajectory
-
-
-class FakeChatMLTokenizer:
-    pad_token_id = 0
-    eos_token_id = 1
-    unk_token_id = 2
-
-    def apply_chat_template(self, messages, tokenize=True, add_generation_prompt=False, **_):
-        text = json.dumps(messages) + ("<|assistant|>" if add_generation_prompt else "")
-        return [ord(c) for c in text] if tokenize else text
-
-    def decode(self, ids, skip_special_tokens=False):
-        del skip_special_tokens
-        return "".join(chr(i) for i in ids if 32 <= i < 127)
-
-    def convert_tokens_to_ids(self, token: str):
-        del token
-        return 99
-
-
-class ScriptedGenerator:
-    def __init__(self, responses: list[str]):
-        self.responses = list(responses)
-
-    def __call__(self, input_ids, eos_token_id, max_new_tokens, *, pad_token_id=None, **_):
-        del input_ids, eos_token_id, max_new_tokens, pad_token_id
-        return [ord(c) for c in self.responses.pop(0)]
+from agenticml.evaluation.harness.backend import ModelBackend
+from agenticml.evaluation.harness.backends import ChatMLBackend
+from agenticml.evaluation.harness.backends.chatml_backend import _parse, _to_messages
+from agenticml.runtime import Tool, ToolRegistry
+from agenticml.trajectory import Trajectory
+from tests.fixtures.chatml import FakeChatMLTokenizer
+from tests.fixtures.generators import HfScriptedGenerator
 
 
 @pytest.fixture
 def backend() -> ChatMLBackend:
     return ChatMLBackend(
-        cast(PreTrainedTokenizerBase, FakeChatMLTokenizer()),
-        cast(HfGenerator, ScriptedGenerator([])),
+        FakeChatMLTokenizer(),
+        HfScriptedGenerator([], append_stop=False),
     )
 
 
@@ -63,12 +35,9 @@ def test_parse_tool_and_text():
 
 
 def test_run_terminal(backend: ChatMLBackend):
-    backend.generator = cast(
-        HfGenerator,
-        ScriptedGenerator([
-            '<|python_tag|>{"name": "answer", "arguments": "{\\"text\\": \\"42\\"}"}<|eom_id|>',
-        ]),
-    )
+    backend.generator = HfScriptedGenerator([
+        '<|python_tag|>{"name": "answer", "arguments": "{\\"text\\": \\"42\\"}"}<|eom_id|>',
+    ], append_stop=False)
     out = backend.run(
         [{"type": "goal", "content": "g"}, {"type": "mission", "content": "m"}],
         ToolRegistry(),
@@ -79,13 +48,10 @@ def test_run_terminal(backend: ChatMLBackend):
 
 
 def test_run_tool_loop(backend: ChatMLBackend):
-    backend.generator = cast(
-        HfGenerator,
-        ScriptedGenerator([
-            '<|python_tag|>{"name": "echo", "arguments": "{\\"value\\": \\"a\\"}"}<|eom_id|>',
-            '<|python_tag|>{"name": "answer", "arguments": "{\\"text\\": \\"done\\"}"}<|eom_id|>',
-        ]),
-    )
+    backend.generator = HfScriptedGenerator([
+        '<|python_tag|>{"name": "echo", "arguments": "{\\"value\\": \\"a\\"}"}<|eom_id|>',
+        '<|python_tag|>{"name": "answer", "arguments": "{\\"text\\": \\"done\\"}"}<|eom_id|>',
+    ], append_stop=False)
     reg = ToolRegistry()
     reg.register(Tool("echo", lambda value: value, {"name": "echo", "parameters": {"type": "object", "properties": {"value": {"type": "string"}}, "required": ["value"]}}))
     out = backend.run(Trajectory([{"type": "goal", "content": "g"}, {"type": "mission", "content": "m"}]), reg)

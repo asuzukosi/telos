@@ -1,11 +1,12 @@
 import json
 
-from telos.evaluation.benchmarks.bfcl.common import (
+from agenticml.evaluation.benchmarks.bfcl.common import (
     count_retry_steps,
+    execution_result_frame,
     retry_metrics_from_rows,
     write_results,
 )
-from telos.evaluation.benchmarks.bfcl.score import dedupe_result_rows, load_entry_validity, score
+from agenticml.evaluation.benchmarks.bfcl.score import dedupe_result_rows, load_entry_validity, score
 
 
 def test_load_entry_validity_treats_missing_ids_as_pass(tmp_path):
@@ -81,7 +82,24 @@ def test_score_writes_summary_with_mock_results(tmp_path):
         score_dir=tmp_path / "score",
     )
     assert "simple_python" in suite_score.per_domain
-    out = tmp_path / "score" / "org_model" / "telos_subset_summary.json"
+    out = tmp_path / "score" / "org_model" / "agenticml_subset_summary.json"
     assert out.is_file()
     loaded = json.loads(out.read_text())
     assert loaded["retry"]["total_retry_count"] == 0.0
+
+
+def test_execution_result_frame_ok():
+    assert execution_result_frame('{"zipcode": "94016"}', "get_zipcode") == {
+        "tool": "get_zipcode",
+        "value": '{"zipcode": "94016"}',
+    }
+
+
+def test_execution_result_frame_error():
+    assert execution_result_frame(
+        '{"error": "distance not found in database."}',
+        "get_distance",
+    ) == {
+        "tool": "get_distance",
+        "value": '{"error": "distance not found in database."}',
+    }

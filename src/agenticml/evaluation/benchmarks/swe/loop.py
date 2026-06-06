@@ -1,21 +1,23 @@
-"""agent loops for swe-bench via mini-swe bash environment (telos + chatml)."""
+"""agent loops for swe-bench via mini-swe bash environment (agenticml + chatml)."""
 
 from __future__ import annotations
 
 import json
 import os
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
-from telos.constants import FrameType
-from telos.evaluation.benchmarks.swe.env import REPEAT_COMMAND_LIMIT
-from telos.evaluation.benchmarks.swe.prelude import instance_to_messages, instance_to_prelude
-from telos.evaluation.benchmarks.swe.registry import SweEnvBridge, registry_from_bridge
-from telos.evaluation.harness.backends.chatml_backend import ChatMLBackend, _tool_name_args
-from telos.evaluation.harness.backends.telos_backend import TelosBackend
-from telos.frames import Frame
-from telos.runtime.tools import ToolError
-from telos.trajectory import Trajectory
+from agenticml.constants import FrameType
+from agenticml.evaluation.benchmarks.swe.env import REPEAT_COMMAND_LIMIT
+from agenticml.evaluation.benchmarks.swe.prelude import instance_to_messages, instance_to_prelude
+from agenticml.evaluation.benchmarks.swe.registry import SweEnvBridge, registry_from_bridge
+from agenticml.bridge import bridge as format_bridge
+from agenticml.evaluation.harness.backends.chatml_backend import ChatMLBackend
+from agenticml.evaluation.harness.backends.agenticml_backend import AgenticMLBackend
+from agenticml.frames import Frame
+from agenticml.runtime.tools import ToolError, ToolRegistry
+from agenticml.sdk import with_tool_obs
+from agenticml.trajectory import Trajectory
 
 _PREVIEW = 300
 
@@ -78,168 +80,36 @@ class SweRunResult:
         }
 
 
-def run_telos_swe(
-    backend: TelosBackend,
-    bridge: SweEnvBridge,
-    instance: dict[str, Any],
-    *,
-    max_iterations: int = 250,
-    max_new_tokens: int = 512,
-) -> SweRunResult:
-    """run telos steps against a mini-swe bash environment until submit or limit."""
-    instance_id = str(instance.get("instance_id") or "")
-    registry = registry_from_bridge(bridge)
-    traj = Trajectory(instance_to_prelude(instance))
-
-    prompt_tokens = 0
-    generated_tokens = 0
-    inference_sec = 0.0
-    repeat_tracker = _RepeatTracker()
-
-    for iteration in range(1, max_iterations + 1):
-        if bridge.submission is not None:
-            return SweRunResult(
-                instance_id=instance_id,
-                trajectory=traj,
-                stopped_on="submitted",
-                iterations=iteration - 1,
-                model_patch=bridge.submission,
-                exit_status=bridge.exit_status,
-                prompt_tokens=prompt_tokens,
-                generated_tokens=generated_tokens,
-                inference_sec=inference_sec,
-            )
-
-        out = backend.step(
-            traj,
-            registry.schemas(),
-            max_new_tokens=max_new_tokens,
-            strict=False,
-        )
-        prompt_tokens += out.prompt_tokens
-        generated_tokens += out.generated_tokens
-        inference_sec += out.inference_sec
-        _log(
-            instance_id,
-            iteration,
-            f"generate {out.generated_tokens} tok in {out.inference_sec:.1f}s",
-        )
-
-        if out.step is None:
-            return SweRunResult(
-                instance_id=instance_id,
-                trajectory=traj,
-                stopped_on="step_failed",
-                iterations=iteration,
-                prompt_tokens=prompt_tokens,
-                generated_tokens=generated_tokens,
-                inference_sec=inference_sec,
-            )
-
-        step_result = out.step
-        if step_result.stopped_on.startswith("parse_error"):
-            return SweRunResult(
-                instance_id=instance_id,
-                trajectory=step_result.trajectory,
-                stopped_on=step_result.stopped_on,
-                iterations=iteration,
-                prompt_tokens=prompt_tokens,
-                generated_tokens=generated_tokens,
-                inference_sec=inference_sec,
-            )
-
-        traj = step_result.trajectory
-        actions = [
-            f for f in step_result.new_frames.to_frames() if f.type == FrameType.ACTION
-        ]
-        if not actions:
-            return SweRunResult(
-                instance_id=instance_id,
-                trajectory=traj,
-                stopped_on="no_action",
-                iterations=iteration,
-                prompt_tokens=prompt_tokens,
-                generated_tokens=generated_tokens,
-                inference_sec=inference_sec,
-            )
-
-        for action_frame in actions:
-            content = action_frame.content or {}
-            tool_name = content.get("tool")
-            args = {k: v for k, v in content.items() if k != "tool"}
-            cmd = str(args.get("command") or "")
-            if repeat_tracker.would_repeat(cmd):
-                _log(instance_id, iteration, f"repeated command ({REPEAT_COMMAND_LIMIT}x): {_preview(cmd)}")
-                return SweRunResult(
-                    instance_id=instance_id,
-                    trajectory=traj,
-                    stopped_on="repeated_command",
-                    iterations=iteration,
-                    prompt_tokens=prompt_tokens,
-                    generated_tokens=generated_tokens,
-                    inference_sec=inference_sec,
-                )
-            try:
-                value = registry.call(str(tool_name), args)
-                traj.append(Frame(FrameType.RESULT, content={"ok": 1, "value": value}))
-                _log(instance_id, iteration, f"bash: {_preview(cmd)} -> {_preview(str(value))}")
-            except ToolError as exc:
-                traj.append(Frame(FrameType.RESULT, content={"ok": 0, "value": str(exc)}))
-                _log(instance_id, iteration, f"bash: {_preview(cmd)} -> error: {exc}")
-
-            if bridge.submission is not None:
-                _log(instance_id, iteration, f"submitted patch ({len(bridge.submission)} chars)")
-                return SweRunResult(
-                    instance_id=instance_id,
-                    trajectory=traj,
-                    stopped_on="submitted",
-                    iterations=iteration,
-                    model_patch=bridge.submission,
-                    exit_status=bridge.exit_status,
-                    prompt_tokens=prompt_tokens,
-                    generated_tokens=generated_tokens,
-                    inference_sec=inference_sec,
-                )
-
-        if step_result.stopped_on == "max_tokens":
-            return SweRunResult(
-                instance_id=instance_id,
-                trajectory=traj,
-                stopped_on="max_tokens",
-                iterations=iteration,
-                prompt_tokens=prompt_tokens,
-                generated_tokens=generated_tokens,
-                inference_sec=inference_sec,
-            )
-
-    return SweRunResult(
-        instance_id=instance_id,
-        trajectory=traj,
-        stopped_on="max_iterations",
-        iterations=max_iterations,
-        model_patch=bridge.submission,
-        exit_status=bridge.exit_status,
-        prompt_tokens=prompt_tokens,
-        generated_tokens=generated_tokens,
-        inference_sec=inference_sec,
-    )
+@dataclass
+class _ToolCall:
+    name: str
+    args: dict[str, Any]
+    call_id: str | None = None
 
 
-def _submitted_result(
+@dataclass
+class _StepOutcome:
+    stopped_on: str
+    tool_calls: list[_ToolCall]
+    prompt_tokens: int
+    generated_tokens: int
+    inference_sec: float
+
+
+def _submitted(
     *,
     instance_id: str,
-    stopped_on: str,
     iterations: int,
     bridge: SweEnvBridge,
+    trajectory: Trajectory | None,
+    messages: list[dict[str, Any]] | None,
     prompt_tokens: int,
     generated_tokens: int,
     inference_sec: float,
-    trajectory: Trajectory | None = None,
-    messages: list[dict[str, Any]] | None = None,
 ) -> SweRunResult:
     return SweRunResult(
         instance_id=instance_id,
-        stopped_on=stopped_on,
+        stopped_on="submitted",
         iterations=iterations,
         trajectory=trajectory,
         messages=messages,
@@ -251,6 +121,205 @@ def _submitted_result(
     )
 
 
+def _run_tool_calls(
+    *,
+    instance_id: str,
+    iteration: int,
+    tool_calls: list[_ToolCall],
+    registry: ToolRegistry,
+    bridge: SweEnvBridge,
+    repeat_tracker: _RepeatTracker,
+    apply_result: Callable[[_ToolCall, dict[str, Any]], None],
+) -> str | None:
+    for tc in tool_calls:
+        cmd = str(tc.args.get("command") or "")
+        if repeat_tracker.would_repeat(cmd):
+            _log(instance_id, iteration, f"repeated command ({REPEAT_COMMAND_LIMIT}x): {_preview(cmd)}")
+            return "repeated_command"
+        try:
+            value = registry.call(tc.name, tc.args)
+            payload = {"tool": tc.name, "value": value}
+            _log(instance_id, iteration, f"bash: {_preview(cmd)} -> {_preview(str(value))}")
+        except ToolError as exc:
+            payload = {"tool": tc.name, "value": str(exc)}
+            _log(instance_id, iteration, f"bash: {_preview(cmd)} -> error: {exc}")
+        apply_result(tc, payload)
+        if bridge.submission is not None:
+            _log(instance_id, iteration, f"submitted patch ({len(bridge.submission)} chars)")
+            return "submitted"
+    return None
+
+
+def _run_swe_loop(
+    instance_id: str,
+    bridge: SweEnvBridge,
+    *,
+    max_iterations: int,
+    trajectory: Trajectory | None,
+    messages: list[dict[str, Any]] | None,
+    step_once: Callable[[int], _StepOutcome | SweRunResult],
+    apply_result: Callable[[_ToolCall, dict[str, Any]], None],
+) -> SweRunResult:
+    registry = registry_from_bridge(bridge)
+    repeat_tracker = _RepeatTracker()
+    prompt_tokens = 0
+    generated_tokens = 0
+    inference_sec = 0.0
+
+    for iteration in range(1, max_iterations + 1):
+        if bridge.submission is not None:
+            return _submitted(
+                instance_id=instance_id,
+                iterations=iteration - 1,
+                bridge=bridge,
+                trajectory=trajectory,
+                messages=messages,
+                prompt_tokens=prompt_tokens,
+                generated_tokens=generated_tokens,
+                inference_sec=inference_sec,
+            )
+
+        outcome = step_once(iteration)
+        if isinstance(outcome, SweRunResult):
+            outcome.prompt_tokens += prompt_tokens
+            outcome.generated_tokens += generated_tokens
+            outcome.inference_sec += inference_sec
+            outcome.trajectory = trajectory
+            outcome.messages = messages
+            return outcome
+
+        prompt_tokens += outcome.prompt_tokens
+        generated_tokens += outcome.generated_tokens
+        inference_sec += outcome.inference_sec
+        _log(
+            instance_id,
+            iteration,
+            f"generate {outcome.generated_tokens} tok in {outcome.inference_sec:.1f}s",
+        )
+
+        if outcome.stopped_on not in ("ok", "max_tokens"):
+            return SweRunResult(
+                instance_id=instance_id,
+                stopped_on=outcome.stopped_on,
+                iterations=iteration,
+                trajectory=trajectory,
+                messages=messages,
+                prompt_tokens=prompt_tokens,
+                generated_tokens=generated_tokens,
+                inference_sec=inference_sec,
+            )
+
+        stop = _run_tool_calls(
+            instance_id=instance_id,
+            iteration=iteration,
+            tool_calls=outcome.tool_calls,
+            registry=registry,
+            bridge=bridge,
+            repeat_tracker=repeat_tracker,
+            apply_result=apply_result,
+        )
+        if stop == "submitted":
+            return _submitted(
+                instance_id=instance_id,
+                iterations=iteration,
+                bridge=bridge,
+                trajectory=trajectory,
+                messages=messages,
+                prompt_tokens=prompt_tokens,
+                generated_tokens=generated_tokens,
+                inference_sec=inference_sec,
+            )
+        if stop == "repeated_command":
+            return SweRunResult(
+                instance_id=instance_id,
+                stopped_on="repeated_command",
+                iterations=iteration,
+                trajectory=trajectory,
+                messages=messages,
+                prompt_tokens=prompt_tokens,
+                generated_tokens=generated_tokens,
+                inference_sec=inference_sec,
+            )
+        if outcome.stopped_on == "max_tokens":
+            return SweRunResult(
+                instance_id=instance_id,
+                stopped_on="max_tokens",
+                iterations=iteration,
+                trajectory=trajectory,
+                messages=messages,
+                prompt_tokens=prompt_tokens,
+                generated_tokens=generated_tokens,
+                inference_sec=inference_sec,
+            )
+
+    return SweRunResult(
+        instance_id=instance_id,
+        stopped_on="max_iterations",
+        iterations=max_iterations,
+        trajectory=trajectory,
+        messages=messages,
+        model_patch=bridge.submission,
+        exit_status=bridge.exit_status,
+        prompt_tokens=prompt_tokens,
+        generated_tokens=generated_tokens,
+        inference_sec=inference_sec,
+    )
+
+
+def run_agenticml_swe(
+    backend: AgenticMLBackend,
+    bridge: SweEnvBridge,
+    instance: dict[str, Any],
+    *,
+    max_iterations: int = 250,
+    max_new_tokens: int = 512,
+) -> SweRunResult:
+    instance_id = str(instance.get("instance_id") or "")
+    traj = with_tool_obs(
+        Trajectory(instance_to_prelude(instance)),
+        registry_from_bridge(bridge).schemas(),
+    )
+
+    def step_once(_iteration: int) -> _StepOutcome | SweRunResult:
+        out = backend.step(traj, max_new_tokens=max_new_tokens, strict=False)
+        if out.step is None:
+            return SweRunResult(instance_id=instance_id, stopped_on="step_failed", iterations=_iteration)
+        step_result = out.step
+        if step_result.stopped_on.startswith("parse_error"):
+            return SweRunResult(
+                instance_id=instance_id,
+                stopped_on=step_result.stopped_on,
+                iterations=_iteration,
+                trajectory=traj,
+            )
+        traj.extend(step_result.new_frames)
+        actions = [f for f in step_result.new_frames.to_frames() if f.type == FrameType.ACTION]
+        if not actions:
+            return _StepOutcome("no_action", [], out.prompt_tokens, out.generated_tokens, out.inference_sec)
+        tool_calls = [
+            _ToolCall(
+                str((a.content or {}).get("tool") or ""),
+                {k: v for k, v in (a.content or {}).items() if k != "tool"},
+            )
+            for a in actions
+        ]
+        stop = "max_tokens" if step_result.stopped_on == "max_tokens" else "ok"
+        return _StepOutcome(stop, tool_calls, out.prompt_tokens, out.generated_tokens, out.inference_sec)
+
+    def apply_result(_tc: _ToolCall, payload: dict[str, Any]) -> None:
+        traj.append(Frame(FrameType.RESULT, content=payload))
+
+    return _run_swe_loop(
+        instance_id,
+        bridge,
+        max_iterations=max_iterations,
+        trajectory=traj,
+        messages=None,
+        step_once=step_once,
+        apply_result=apply_result,
+    )
+
+
 def run_chatml_swe(
     backend: ChatMLBackend,
     bridge: SweEnvBridge,
@@ -259,120 +328,40 @@ def run_chatml_swe(
     max_iterations: int = 250,
     max_new_tokens: int = 512,
 ) -> SweRunResult:
-    """run chatml steps against a mini-swe bash environment until submit or limit."""
     instance_id = str(instance.get("instance_id") or "")
-    registry = registry_from_bridge(bridge)
     messages = instance_to_messages(instance)
 
-    prompt_tokens = 0
-    generated_tokens = 0
-    inference_sec = 0.0
-    repeat_tracker = _RepeatTracker()
-
-    for iteration in range(1, max_iterations + 1):
-        if bridge.submission is not None:
-            return _submitted_result(
-                instance_id=instance_id,
-                stopped_on="submitted",
-                iterations=iteration - 1,
-                bridge=bridge,
-                prompt_tokens=prompt_tokens,
-                generated_tokens=generated_tokens,
-                inference_sec=inference_sec,
-                messages=messages,
-            )
-
-        out = backend.step(
-            messages,
-            registry.schemas(),
-            max_new_tokens=max_new_tokens,
-            strict=False,
-        )
-        prompt_tokens += out.prompt_tokens
-        generated_tokens += out.generated_tokens
-        inference_sec += out.inference_sec
-        _log(
-            instance_id,
-            iteration,
-            f"generate {out.generated_tokens} tok in {out.inference_sec:.1f}s",
-        )
-
+    def step_once(_iteration: int) -> _StepOutcome | SweRunResult:
+        out = backend.step(messages, registry_from_bridge(bridge).schemas(), max_new_tokens=max_new_tokens, strict=False)
         if out.stopped_on.startswith("parse_error"):
+            messages[:] = out.messages or []
             return SweRunResult(
                 instance_id=instance_id,
                 stopped_on=out.stopped_on,
-                iterations=iteration,
-                messages=list(out.messages),
-                prompt_tokens=prompt_tokens,
-                generated_tokens=generated_tokens,
-                inference_sec=inference_sec,
-            )
-
-        messages = list(out.messages)
-        assistant = out.new_messages[0] if out.new_messages else {}
-        tool_calls = assistant.get("tool_calls") or []
-        if not tool_calls:
-            stop = "no_action"
-            return SweRunResult(
-                instance_id=instance_id,
-                stopped_on=stop,
-                iterations=iteration,
+                iterations=_iteration,
                 messages=messages,
-                prompt_tokens=prompt_tokens,
-                generated_tokens=generated_tokens,
-                inference_sec=inference_sec,
             )
-
-        for tc in tool_calls:
+        messages[:] = out.messages or []
+        assistant = out.new_messages[0] if out.new_messages else {}
+        tool_calls_raw = assistant.get("tool_calls") or []
+        if not tool_calls_raw:
+            return _StepOutcome("no_action", [], out.prompt_tokens, out.generated_tokens, out.inference_sec)
+        tool_calls = []
+        for tc in tool_calls_raw:
             fn = tc.get("function") or {}
-            call_id = str(tc.get("id") or f"call_{iteration}")
-            name, args = _tool_name_args(
-                {"name": fn.get("name"), "arguments": fn.get("arguments", "{}")}
-            )
-            cmd = str(args.get("command") or "")
-            if repeat_tracker.would_repeat(cmd):
-                _log(instance_id, iteration, f"repeated command ({REPEAT_COMMAND_LIMIT}x): {_preview(cmd)}")
-                return SweRunResult(
-                    instance_id=instance_id,
-                    stopped_on="repeated_command",
-                    iterations=iteration,
-                    messages=messages,
-                    prompt_tokens=prompt_tokens,
-                    generated_tokens=generated_tokens,
-                    inference_sec=inference_sec,
-                )
-            try:
-                value = registry.call(name, args)
-                payload = {"ok": 1, "value": value}
-                _log(instance_id, iteration, f"bash: {_preview(cmd)} -> {_preview(str(value))}")
-            except ToolError as exc:
-                payload = {"ok": 0, "value": str(exc)}
-                _log(instance_id, iteration, f"bash: {_preview(cmd)} -> error: {exc}")
-            messages.append(
-                {"role": "tool", "tool_call_id": call_id, "content": json.dumps(payload)}
-            )
+            name, args = format_bridge.tool_name_args({"name": fn.get("name"), "arguments": fn.get("arguments", "{}")})
+            tool_calls.append(_ToolCall(name, args, call_id=str(tc.get("id") or f"call_{_iteration}")))
+        return _StepOutcome("ok", tool_calls, out.prompt_tokens, out.generated_tokens, out.inference_sec)
 
-            if bridge.submission is not None:
-                _log(instance_id, iteration, f"submitted patch ({len(bridge.submission)} chars)")
-                return _submitted_result(
-                    instance_id=instance_id,
-                    stopped_on="submitted",
-                    iterations=iteration,
-                    bridge=bridge,
-                    prompt_tokens=prompt_tokens,
-                    generated_tokens=generated_tokens,
-                    inference_sec=inference_sec,
-                    messages=messages,
-                )
+    def apply_result(tc: _ToolCall, payload: dict[str, Any]) -> None:
+        messages.append({"role": "tool", "tool_call_id": tc.call_id, "content": json.dumps(payload)})
 
-    return SweRunResult(
-        instance_id=instance_id,
-        stopped_on="max_iterations",
-        iterations=max_iterations,
+    return _run_swe_loop(
+        instance_id,
+        bridge,
+        max_iterations=max_iterations,
+        trajectory=None,
         messages=messages,
-        model_patch=bridge.submission,
-        exit_status=bridge.exit_status,
-        prompt_tokens=prompt_tokens,
-        generated_tokens=generated_tokens,
-        inference_sec=inference_sec,
+        step_once=step_once,
+        apply_result=apply_result,
     )

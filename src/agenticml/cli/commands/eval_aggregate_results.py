@@ -4,8 +4,8 @@ import argparse
 import json
 from pathlib import Path
 
-from telos.evaluation.benchmarks.aggregate_results import aggregate_results
-from telos.evaluation.benchmarks.common import repo_root
+from agenticml.evaluation.benchmarks.aggregate_results import aggregate_results
+from agenticml.evaluation.benchmarks.common import repo_root
 
 
 def main(argv: list[str] | None = None) -> None:

@@ -5,11 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, cast
 
-from telos.evaluation.benchmarks.common import sample_entries
+from agenticml.evaluation.benchmarks.common import sample_entries
 
 SWE_LITE_DATASET = "princeton-nlp/SWE-Bench_Lite"
 SWE_LITE_SPLIT = "test"
-SUBSET_SOURCE = "telos.evaluation.benchmarks.swe.subset:SUBSET_IDS"
+SUBSET_SOURCE = "agenticml.evaluation.benchmarks.swe.subset:SUBSET_IDS"
 
 # pinned test instances (30 ids, seed 42 sample from swe-bench_lite test split)
 SUBSET_IDS: list[str] = [

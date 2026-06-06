@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from telos.evaluation.benchmarks.toolbench.subset import (
+from agenticml.evaluation.benchmarks.toolbench.subset import (
     SUBSET_IDS,
     SUBSET_SOURCE,
     load_subset,

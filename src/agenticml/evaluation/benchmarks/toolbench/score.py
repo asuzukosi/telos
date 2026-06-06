@@ -1,81 +1,40 @@
-"""toolbench scoring aligned with upstream tooleval pass-rate checks."""
+"""toolbench scoring via upstream tooleval helpers."""
 
 from __future__ import annotations
 
 import json
 import os
-import re
 import sys
 from pathlib import Path
 from typing import Any, Optional, cast
 
-from telos.evaluation.benchmarks.common import model_dir_name
-from telos.evaluation.benchmarks.suite import SuiteScore
-from telos.evaluation.benchmarks.toolbench.convert import row_to_converted, rows_to_converted_map
-from telos.evaluation.harness.task import TaskResult, TaskTiming, TaskTokens
+from agenticml.evaluation.benchmarks.common import model_dir_name
+from agenticml.evaluation.benchmarks.suite import SuiteScore
+from agenticml.evaluation.benchmarks.toolbench.convert import row_to_converted, rows_to_converted_map
+from agenticml.evaluation.harness.task import TaskResult, TaskTiming, TaskTokens
 
 
-def get_steps(example: dict[str, Any]) -> tuple[str, str]:
-    """mirror toolbench.tooleval.utils.get_steps."""
-    answer_details = example["answer"]["answer_details"][0]
-    answer_steps: list[str] = []
-    step_cnt = 1
-    final_step = ""
+def _tooleval_imports():
+    from agenticml.evaluation.benchmarks.toolbench.common import ensure_toolbench_on_path
 
-    while "next" in answer_details:
-        answer_str = answer_details["message"]
-        role_str = answer_details["role"]
+    root = ensure_toolbench_on_path()
+    tooleval_dir = root / "toolbench" / "tooleval"
+    path = str(tooleval_dir)
+    if path not in sys.path:
+        sys.path.insert(0, path)
+    from toolbench.tooleval.evaluators.registered_cls.rtl import ReinforceToolLearningEvaluator
+    from toolbench.tooleval.utils import get_steps
 
-        if answer_str and role_str == "tool":
-            step_text = f"Step {step_cnt}: {answer_str}"
-            answer_steps.append(step_text)
-            final_step = f"Final step: {answer_str}"
-            step_cnt += 1
-
-        if not answer_details["next"]:
-            break
-
-        answer_details = answer_details["next"][0]
-
-    return "\n".join(answer_steps), final_step
-
-
-def check_has_hallucination(available_tools: list[dict[str, Any]], answer: dict[str, Any]) -> bool:
-    """rule-based check from toolbench tooleval rtl (no gpt)."""
-    available_names = {tool["name"] for tool in available_tools}
-
-    def check_node_valid(node: dict[str, Any]) -> bool:
-        if node["role"] == "tool":
-            message = node["message"]
-            if isinstance(message, dict):
-                message = str(message)
-            match = re.findall(r"'name':\s*'(.*?)'", message, re.DOTALL)
-            if not match:
-                return False
-            return match[0] in available_names
-        return True
-
-    def recursive_check(nodes: Any) -> bool:
-        if isinstance(nodes, dict):
-            if not check_node_valid(nodes):
-                return False
-            return recursive_check(nodes.get("next"))
-        if isinstance(nodes, list):
-            for node in nodes:
-                if not recursive_check(node):
-                    return False
-            return True
-        if nodes is None:
-            return True
-        raise ValueError(f"unknown node type {type(nodes)}")
-
-    return recursive_check(answer["answer_details"])
+    return get_steps, ReinforceToolLearningEvaluator
 
 
 def structural_pass(example: dict[str, Any]) -> tuple[bool, str]:
-    """upstream pre-gpt checks from eval_pass_rate.compute_pass_rate."""
+    get_steps, rtl_cls = _tooleval_imports()
+    evaluator = object.__new__(rtl_cls)
     try:
-        not_hallucinate = check_has_hallucination(example["available_tools"], example["answer"])
+        not_hallucinate = evaluator.check_has_hallucination(
+            example["available_tools"], example["answer"]
+        )
     except Exception:
         not_hallucinate = True
 
@@ -94,29 +53,19 @@ def structural_pass(example: dict[str, Any]) -> tuple[bool, str]:
 
 
 def _gpt_pass(example: dict[str, Any]) -> tuple[Optional[bool], str]:
-    """optional full upstream gpt judge when openai credentials are configured."""
     if not os.environ.get("OPENAI_API_KEY"):
         return None, "gpt skipped (no OPENAI_API_KEY)"
 
     try:
-        from telos.evaluation.benchmarks.toolbench.common import ensure_toolbench_on_path
-
-        root = ensure_toolbench_on_path()
-        tooleval_dir = root / "toolbench" / "tooleval"
-        path = str(tooleval_dir)
-        if path not in sys.path:
-            sys.path.insert(0, path)
-
+        _get_steps, rtl_cls = _tooleval_imports()
         from evaluators import load_registered_automatic_evaluator
-        from evaluators.registered_cls.rtl import (
-            AnswerPass,
-            AnswerStatus,
-            ReinforceToolLearningEvaluator,
-            TaskStatus,
-        )
+        from evaluators.registered_cls.rtl import AnswerPass, AnswerStatus, TaskStatus
 
+        from agenticml.evaluation.benchmarks.toolbench.common import ensure_toolbench_on_path
+
+        tooleval_dir = ensure_toolbench_on_path() / "toolbench" / "tooleval"
         evaluator = cast(
-            ReinforceToolLearningEvaluator,
+            rtl_cls,
             load_registered_automatic_evaluator(
                 evaluator_name="tooleval_gpt-3.5-turbo_default",
                 evaluators_cfg_path=str(tooleval_dir / "evaluators"),

@@ -5,8 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Optional, cast
 
-from telos.evaluation.benchmarks.common import repo_root
-from telos.evaluation.benchmarks.format_validity.evaluate import (
+from agenticml.constants import DEFAULT_TRAJECTORY_DATASET
+from agenticml.evaluation.benchmarks.common import repo_root
+from agenticml.evaluation.benchmarks.format_validity.evaluate import (
     FORMAT_SPECS,
     ValidityResult,
     eval_row,
@@ -14,12 +15,12 @@ from telos.evaluation.benchmarks.format_validity.evaluate import (
     suite_metrics,
     task_result,
 )
-from telos.evaluation.benchmarks.suite import BenchmarkSuite, RunContext, SuiteScore
-from telos.evaluation.harness.load import AdapterMode, load_model
-from telos.evaluation.harness.task import BenchmarkResult, TaskResult
+from agenticml.evaluation.benchmarks.suite import BenchmarkSuite, RunContext, SuiteScore
+from agenticml.evaluation.harness.load import load_model
+from agenticml.evaluation.harness.task import BenchmarkResult, TaskResult
 from datasets import Dataset, load_dataset
 
-DATASET_ID = "kosiasuzu/telos-agent-trajectory-dataset"
+DATASET_ID = DEFAULT_TRAJECTORY_DATASET
 SPLIT = "eval"
 
 
@@ -30,7 +31,7 @@ class FormatValiditySuite(BenchmarkSuite):
         self._model = None
         self._tokenizer = None
         self._stop_ids: list[int] = []
-        self._fmt: str = "telos"
+        self._fmt: str = "agenticml"
 
     def default_result_dir(self) -> Path:
         return repo_root() / "results" / "benchmarks" / "format_validity"
@@ -59,8 +60,7 @@ class FormatValiditySuite(BenchmarkSuite):
 
     def create_backend(self, ctx: RunContext) -> Any:
         spec = FORMAT_SPECS[ctx.format]
-        mode = AdapterMode(ctx.adapter_mode)
-        self._model = load_model(ctx.model_id, mode, ctx.adapter_id)
+        self._model = load_model(ctx.model_id)
         self._tokenizer = spec.load_tokenizer(ctx.model_id)
         self._model.eval()
         self._stop_ids = spec.stop_token_ids(self._tokenizer)

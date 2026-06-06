@@ -1,4 +1,4 @@
-from telos.cli.main import main
+from agenticml.cli.main import main
 
 if __name__ == "__main__":
     main()

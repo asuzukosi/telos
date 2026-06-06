@@ -10,8 +10,8 @@ from typing import Any, Callable, Iterable
 
 from tqdm import tqdm
 
-from telos.evaluation.harness.aggregate import aggregate_efficiency
-from telos.evaluation.harness.task import BenchmarkResult, BenchmarkRunMeta, EvalTask, TaskResult
+from agenticml.evaluation.harness.aggregate import aggregate_efficiency
+from agenticml.evaluation.harness.task import BenchmarkResult, BenchmarkRunMeta, EvalTask, TaskResult
 
 TaskEvaluator = Callable[[EvalTask], TaskResult]
 

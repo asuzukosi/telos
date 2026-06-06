@@ -5,17 +5,22 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Optional
 
-from telos.evaluation.benchmarks.bfcl import chatml, telos
-from telos.evaluation.benchmarks.bfcl import score as bfcl_score
-from telos.evaluation.benchmarks.bfcl.common import write_results
-from telos.evaluation.benchmarks.bfcl.score import default_result_dir, load_result_rows
-from telos.evaluation.benchmarks.bfcl.subset import BFCLSubset, load_subset
-from telos.evaluation.benchmarks.common import sample_entries
-from telos.evaluation.benchmarks.suite import BenchmarkSuite, RunContext, SuiteScore
-from telos.evaluation.harness.backends.chatml_backend import ChatMLBackend
-from telos.evaluation.harness.backends.telos_backend import TelosBackend
-from telos.evaluation.harness.load import AdapterMode
-from telos.evaluation.harness.task import TaskResult
+from agenticml.evaluation.benchmarks.bfcl import agenticml, chatml
+from agenticml.evaluation.benchmarks.bfcl import score as bfcl_score
+from agenticml.evaluation.benchmarks.bfcl.common import write_results
+from agenticml.evaluation.benchmarks.bfcl.score import default_result_dir, load_result_rows
+from agenticml.evaluation.benchmarks.bfcl.subset import BFCLSubset, load_subset
+from agenticml.evaluation.benchmarks.common import sample_entries
+from agenticml.evaluation.benchmarks.suite import (
+    BenchmarkSuite,
+    RunContext,
+    SuiteScore,
+    create_eval_backend,
+    run_format_task,
+)
+from agenticml.evaluation.harness.backends.chatml_backend import ChatMLBackend
+from agenticml.evaluation.harness.backends.agenticml_backend import AgenticMLBackend
+from agenticml.evaluation.harness.task import TaskResult
 
 
 class BFCLSuite(BenchmarkSuite):
@@ -41,31 +46,22 @@ class BFCLSuite(BenchmarkSuite):
         subset = self.load_dataset()
         return sample_entries(subset.entries, num_examples, seed=seed)
 
-    def create_backend(self, ctx: RunContext) -> TelosBackend | ChatMLBackend:
-        factory = (
-            TelosBackend.from_pretrained
-            if ctx.format == "telos"
-            else ChatMLBackend.from_pretrained
-        )
-        return factory(
-            ctx.model_id,
-            adapter_mode=AdapterMode(ctx.adapter_mode),
-            adapter_id=ctx.adapter_id,
-        )
+    def create_backend(self, ctx: RunContext) -> AgenticMLBackend | ChatMLBackend:
+        return create_eval_backend(ctx)
 
     def run_one_task(
         self,
-        backend: TelosBackend | ChatMLBackend,
+        backend: AgenticMLBackend | ChatMLBackend,
         entry: dict[str, Any],
         ctx: RunContext,
     ) -> dict[str, Any]:
-        if ctx.format == "telos":
-            if not isinstance(backend, TelosBackend):
-                raise TypeError(f"expected TelosBackend for telos format, got {type(backend).__name__}")
-            return telos.run_one_task(backend, entry, ctx)
-        if not isinstance(backend, ChatMLBackend):
-            raise TypeError(f"expected ChatMLBackend for chatml format, got {type(backend).__name__}")
-        return chatml.run_one_task(backend, entry, ctx)
+        return run_format_task(
+            backend,
+            entry,
+            ctx,
+            agenticml_run=agenticml.run_one_task,
+            chatml_run=chatml.run_one_task,
+        )
 
     def persist_task_result(
         self,

@@ -2,10 +2,10 @@ import json
 
 import pytest
 
-from telos.evaluation.benchmarks.bfcl.chatml import entry_turn_messages
-from telos.evaluation.benchmarks.bfcl.common import encode_result
-from telos.evaluation.benchmarks.bfcl.common import entry_tool_schemas
-from telos.evaluation.harness.backends.chatml_backend import _with_tools
+from agenticml.evaluation.benchmarks.bfcl.chatml import entry_turn_messages
+from agenticml.evaluation.benchmarks.bfcl.common import encode_result
+from agenticml.evaluation.benchmarks.bfcl.common import entry_tool_schemas
+from agenticml.bridge import bridge
 
 
 def test_entry_turn_messages_inserts_system():
@@ -59,11 +59,11 @@ def test_encode_result_irrelevance_empty():
 
 def test_chatml_skips_duplicate_tool_block_in_prompt():
     pytest.importorskip("tree_sitter")
-    from telos.evaluation.benchmarks.bfcl.subset import load_subset
+    from agenticml.evaluation.benchmarks.bfcl.subset import load_subset
 
     entry = next(e for e in load_subset().entries if e["id"] == "multi_turn_base_67")
     msgs = entry_turn_messages(entry, 0)
-    dup = _with_tools(list(msgs), entry_tool_schemas(entry))
+    dup = bridge.inject_tool_schemas(list(msgs), entry_tool_schemas(entry))
     assert "available tools:" not in msgs[0]["content"]
     assert any("available tools:" in m.get("content", "") for m in dup)
 

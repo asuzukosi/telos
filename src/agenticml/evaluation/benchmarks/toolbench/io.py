@@ -6,8 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from telos.evaluation.benchmarks.common import model_dir_name, repo_root
-from telos.evaluation.harness.backends.telos_backend import BackendRunResult
+from agenticml.evaluation.benchmarks.common import model_dir_name, repo_root
+from agenticml.evaluation.harness.backends.agenticml_backend import BackendRunResult
 
 
 def default_result_dir() -> Path:
@@ -23,7 +23,7 @@ def result_row(
     query: str = "",
     available_tools: list[dict[str, Any]] | None = None,
     messages: list[dict[str, Any]] | None = None,
-    fmt: str = "telos",
+    fmt: str = "agenticml",
 ) -> dict[str, Any]:
     return {
         "id": entry_id,

@@ -1,4 +1,4 @@
-from telos.evaluation.harness.backends.chatml_backend import ChatMLBackend
-from telos.evaluation.harness.backends.telos_backend import TelosBackend
+from agenticml.evaluation.harness.backends.chatml_backend import ChatMLBackend
+from agenticml.evaluation.harness.backends.agenticml_backend import AgenticMLBackend
 
-__all__ = ["ChatMLBackend", "TelosBackend"]
+__all__ = ["ChatMLBackend", "AgenticMLBackend"]

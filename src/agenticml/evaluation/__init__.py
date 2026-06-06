@@ -1,1 +1,1 @@
-"""telos evaluation suites and shared harness."""
+"""agenticml evaluation suites and shared harness."""

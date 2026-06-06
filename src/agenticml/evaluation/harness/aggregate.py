@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from telos.evaluation.harness.task import TaskResult
+from agenticml.evaluation.harness.task import TaskResult
 
 
 def aggregate_efficiency(tasks: list[TaskResult], extra: dict[str, Any] | None = None) -> dict[str, Any]:

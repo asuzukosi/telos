@@ -1,23 +1,23 @@
-"""telos model adapter: TelosBackend + run_telos_swe on mini-swe bash env."""
+"""agenticml model adapter: AgenticMLBackend + run_agenticml_swe on mini-swe bash env."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from telos.evaluation.benchmarks.suite import RunContext
-from telos.evaluation.benchmarks.swe.env import (
+from agenticml.evaluation.benchmarks.suite import RunContext
+from agenticml.evaluation.benchmarks.swe.env import (
     DEFAULT_MAX_ITERATIONS,
     cleanup_environment,
     environment_for_instance,
 )
-from telos.evaluation.benchmarks.swe.io import result_row
-from telos.evaluation.benchmarks.swe.loop import run_telos_swe
-from telos.evaluation.benchmarks.swe.registry import BashEnvironment, registry_from_env
-from telos.evaluation.harness.backends.telos_backend import TelosBackend
+from agenticml.evaluation.benchmarks.swe.io import result_row
+from agenticml.evaluation.benchmarks.swe.loop import run_agenticml_swe
+from agenticml.evaluation.benchmarks.swe.registry import BashEnvironment, registry_from_env
+from agenticml.evaluation.harness.backends.agenticml_backend import AgenticMLBackend
 
 
 def run_one_task(
-    backend: TelosBackend,
+    backend: AgenticMLBackend,
     entry: dict[str, Any],
     ctx: RunContext,
     *,
@@ -35,7 +35,7 @@ def run_one_task(
     )
     try:
         _, bridge = registry_from_env(env)
-        result = run_telos_swe(
+        result = run_agenticml_swe(
             backend,
             bridge,
             entry,

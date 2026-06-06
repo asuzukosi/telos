@@ -8,8 +8,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from telos.evaluation.benchmarks.common import repo_root
-from telos.evaluation.benchmarks.toolbench.subset import (
+from agenticml.evaluation.benchmarks.common import repo_root
+from agenticml.evaluation.benchmarks.toolbench.subset import (
     TOOLBENCH_ROOT_REL,
     default_data_root,
     ensure_toolbench_data,
@@ -51,9 +51,10 @@ def ensure_toolbench_on_path() -> Path:
             f"toolbench package not found at {root / 'toolbench'}; "
             "run: git submodule update --init third_party/ToolBench"
         )
-    s = str(root)
-    if s not in sys.path:
-        sys.path.insert(0, s)
+    for sub in (root, root / "toolbench" / "inference"):
+        s = str(sub)
+        if s not in sys.path:
+            sys.path.insert(0, s)
     return root
 
 

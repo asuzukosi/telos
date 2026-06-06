@@ -1,12 +1,12 @@
-"""map cachedtoolenv functions to telos ToolRegistry."""
+"""map cachedtoolenv functions to agenticml ToolRegistry."""
 
 from __future__ import annotations
 
 import json
 from typing import Any
 
-from telos.evaluation.benchmarks.toolbench.cache import CachedToolEnv
-from telos.runtime.tools import Tool, ToolError, ToolRegistry
+from agenticml.evaluation.benchmarks.toolbench.cache import CachedToolEnv
+from agenticml.runtime.tools import Tool, ToolError, ToolRegistry
 
 
 def _action_input(args: dict[str, Any]) -> str:

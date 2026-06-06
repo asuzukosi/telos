@@ -1,45 +1,16 @@
-"""tests for agenticml.validators and the sanitize helper."""
-from agenticml.constants import FrameType
+"""tests for agenticml.validators."""
 from agenticml.frames import (
     action,
     belief,
+    end,
     feedback,
     goal,
     mission,
     obs,
-    parse,
     result,
     reward,
-    sanitize,
 )
 from agenticml.validators import Violation, is_valid, validate
-
-
-def test_sanitize_strips_known_markers():
-    text = "hello <|action|> world <|reward|>1<|end|>"
-    cleaned = sanitize(text)
-    assert "<|action|>" not in cleaned
-    assert "<|reward|>" not in cleaned
-    assert "<|end|>" not in cleaned
-    assert "hello" in cleaned
-    assert "world" in cleaned
-
-
-def test_sanitize_leaves_normal_text_intact():
-    text = "What does <pipe> mean? Should I use ||?"
-    cleaned = sanitize(text)
-    assert cleaned == text
-
-
-def test_sanitized_text_parses_safely_when_wrapped():
-    user_input = "Tell me about <|action|> and <|result|> tokens."
-    cleaned = sanitize(user_input)
-    trajectory = f"<|mission|>{cleaned}"
-    frames = parse(trajectory)
-    assert len(frames) == 1
-    assert frames[0].type is FrameType.MISSION
-    assert "Tell me about" in frames[0].content
-    assert "tokens" in frames[0].content
 
 
 def test_empty_trajectory_is_valid():
@@ -61,7 +32,7 @@ def test_minimal_valid_trajectory_terminal_plus_optional_result():
         goal("be helpful"),
         mission("answer the question"),
         action({"tool": "answer", "text": "42"}),
-        result({"ok": 1}),
+        result({"tool": "answer", "value": None}),
     ]
     assert validate(frames) == []
 
@@ -71,7 +42,7 @@ def test_typical_multistep_trajectory():
         goal("file assistant"),
         mission("find largest file"),
         action({"tool": "list_dir", "path": "/tmp"}),
-        result({"ok": 1, "value": ["a", "b"]}),
+        result({"tool": "list_dir", "value": ["a", "b"]}),
         belief("two files"),
         action({"tool": "answer", "text": "done"}),
     ]
@@ -162,7 +133,7 @@ def test_orphan_result_is_caught():
     frames = [
         goal("g"),
         mission("m"),
-        result({"ok": 1, "value": "stray"}),
+        result({"tool": "bash", "value": "stray"}),
     ]
     vs = validate(frames)
     rules = [v.rule for v in vs]
@@ -176,12 +147,12 @@ def test_batched_actions_in_one_block_is_valid():
         action({"tool": "stat", "path": "a"}),
         action({"tool": "stat", "path": "b"}),
         action({"tool": "stat", "path": "c"}),
-        result({"ok": 1, "value": {"size": 1}}),
-        result({"ok": 1, "value": {"size": 2}}),
-        result({"ok": 1, "value": {"size": 3}}),
+        result({"tool": "stat", "value": {"size": 1}}),
+        result({"tool": "stat", "value": {"size": 2}}),
+        result({"tool": "stat", "value": {"size": 3}}),
         belief("collected three sizes"),
         action({"tool": "answer", "text": "done"}),
-        result({"ok": 1}),
+        result({"tool": "answer", "value": None}),
     ]
     assert is_valid(frames)
 
@@ -193,8 +164,8 @@ def test_batched_actions_with_too_few_results_is_invalid():
         action({"tool": "stat", "path": "a"}),
         action({"tool": "stat", "path": "b"}),
         action({"tool": "stat", "path": "c"}),
-        result({"ok": 1, "value": {"size": 1}}),
-        result({"ok": 1, "value": {"size": 2}}),
+        result({"tool": "stat", "value": {"size": 1}}),
+        result({"tool": "stat", "value": {"size": 2}}),
     ]
     vs = validate(frames)
     assert any(v.rule == "unresolved_action" for v in vs)
@@ -206,7 +177,7 @@ def test_batched_non_terminal_then_terminal_one_result_ok():
         mission("m"),
         action({"tool": "stat", "path": "a"}),
         action({"tool": "answer", "text": "done"}),
-        result({"ok": 1, "value": {"size": 1}}),
+        result({"tool": "stat", "value": {"size": 1}}),
     ]
     assert is_valid(frames)
 
@@ -217,9 +188,9 @@ def test_batched_actions_with_extra_result():
         mission("m"),
         action({"tool": "stat", "path": "a"}),
         action({"tool": "stat", "path": "b"}),
-        result({"ok": 1, "value": 1}),
-        result({"ok": 1, "value": 2}),
-        result({"ok": 1, "value": 3}),
+        result({"tool": "stat", "value": 1}),
+        result({"tool": "stat", "value": 2}),
+        result({"tool": "stat", "value": 3}),
     ]
     vs = validate(frames)
     rules = [v.rule for v in vs]
@@ -232,7 +203,7 @@ def test_reward_before_any_action_is_caught():
         mission("m"),
         reward(1.0),
         action({"tool": "answer", "text": "x"}),
-        result({"ok": 1}),
+        result({"tool": "answer", "value": None}),
     ]
     vs = validate(frames)
     rules = [v.rule for v in vs]
@@ -245,7 +216,7 @@ def test_feedback_before_any_action_is_caught():
         mission("m"),
         feedback("user clarification"),
         action({"tool": "answer", "text": "x"}),
-        result({"ok": 1}),
+        result({"tool": "answer", "value": None}),
     ]
     vs = validate(frames)
     rules = [v.rule for v in vs]
@@ -264,7 +235,7 @@ def test_trajectory_without_goal_is_invalid():
     frames = [
         mission("answer"),
         action({"tool": "answer", "text": "x"}),
-        result({"ok": 1}),
+        result({"tool": "answer", "value": None}),
     ]
     vs = validate(frames)
     rules = [v.rule for v in vs]
@@ -277,11 +248,35 @@ def test_obs_before_goal_is_invalid():
         goal("g"),
         mission("m"),
         action({"tool": "answer", "text": "x"}),
-        result({"ok": 1}),
+        result({"tool": "answer", "value": None}),
     ]
     vs = validate(frames)
     rules = [v.rule for v in vs]
     assert "missing_goal" in rules
+
+
+def test_action_end_result_pattern_is_valid():
+    frames = [
+        goal("g"),
+        mission("m"),
+        action({"tool": "list_dir", "path": "/"}),
+        end(),
+        result({"tool": "list_dir", "value": []}),
+        action({"tool": "answer", "text": "done"}),
+        end(),
+    ]
+    assert is_valid(frames)
+
+
+def test_misplaced_end_before_model_frame_is_invalid():
+    frames = [
+        goal("g"),
+        end(),
+        mission("m"),
+        action({"tool": "answer", "text": "x"}),
+    ]
+    vs = validate(frames)
+    assert any(v.rule == "misplaced_end" for v in vs)
 
 
 def test_goal_first_then_obs_is_valid():
@@ -290,6 +285,6 @@ def test_goal_first_then_obs_is_valid():
         obs("env: linux"),
         mission("m"),
         action({"tool": "answer", "text": "x"}),
-        result({"ok": 1}),
+        result({"tool": "answer", "value": None}),
     ]
     assert is_valid(frames)

@@ -2,16 +2,25 @@
 
 from __future__ import annotations
 
-from enum import Enum
-from typing import Any, Optional, Union
+from typing import Any, Protocol, cast
 
 import torch
-from transformers import AutoModelForCausalLM
+from transformers import AutoModelForCausalLM, PreTrainedModel
 
 
-class AdapterMode(str, Enum):
-    MERGED = "merged"
-    PEFT = "peft"
+class CausalLM(Protocol):
+    """typed generate surface for causal lms.
+
+    runtime values are ``PreTrainedModel`` instances; this protocol exists because
+    huggingface stubs type ``PreTrainedModel.generate`` as a ``Tensor``, not a method.
+    """
+
+    def generate(self, *args: Any, **kwargs: Any) -> torch.Tensor: ...
+
+
+def as_causal_lm(model: PreTrainedModel) -> CausalLM:
+    """single cast boundary so call sites can use ``model.generate(...)`` under pyright."""
+    return cast(CausalLM, model)
 
 
 def causal_lm_load_kwargs(dtype: torch.dtype) -> dict[str, Any]:
@@ -29,31 +38,12 @@ def causal_lm_load_kwargs(dtype: torch.dtype) -> dict[str, Any]:
     }
 
 
-def load_model(
-    model_id: str,
-    adapter_mode: Union[AdapterMode, str],
-    adapter_id: Optional[str] = None,
-    dtype: torch.dtype = torch.bfloat16,
-):
-    mode = AdapterMode(adapter_mode)
-    load_kw = causal_lm_load_kwargs(dtype)
-    if mode == AdapterMode.MERGED:
-        return AutoModelForCausalLM.from_pretrained(model_id, **load_kw)
-    if mode == AdapterMode.PEFT:
-        if not adapter_id:
-            raise ValueError(f"adapter_mode={AdapterMode.PEFT.value!r} requires adapter_id")
-        try:
-            from peft import PeftModel
-        except ImportError as e:
-            raise ImportError(
-                f"adapter_mode={AdapterMode.PEFT.value!r} requires: pip install peft"
-            ) from e
-        base = AutoModelForCausalLM.from_pretrained(model_id, **load_kw)
-        return PeftModel.from_pretrained(base, adapter_id)
-    raise ValueError(f"unsupported adapter_mode: {adapter_mode!r}")
+def load_model(model_id: str, dtype: torch.dtype = torch.bfloat16) -> PreTrainedModel:
+    """load a merged hf checkpoint for inference."""
+    return AutoModelForCausalLM.from_pretrained(model_id, **causal_lm_load_kwargs(dtype))
 
 
-def model_device(model) -> torch.device:
+def model_device(model: PreTrainedModel) -> torch.device:
     try:
         return model.device
     except Exception:

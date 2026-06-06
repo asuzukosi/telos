@@ -1,4 +1,4 @@
-"""validate, deduplicate, split, and push telos trajectory jsonl to huggingface."""
+"""validate, deduplicate, split, and push agenticml trajectory jsonl to huggingface."""
 
 from __future__ import annotations
 
@@ -10,9 +10,9 @@ from pathlib import Path
 
 from datasets import Dataset, DatasetDict
 
-from telos.frames import parse, render
-from telos.trajectory import Trajectory
-from telos.validators import validate
+from agenticml.bridge import bridge
+from agenticml.trajectory import Trajectory
+from agenticml.validators import validate
 
 
 def _load_jsonl(path: Path) -> list[dict]:
@@ -30,11 +30,14 @@ def _load_jsonl(path: Path) -> list[dict]:
             print(f"skipping line: {line} (bad format)")
             continue
         domain = obj["domain"] or "unknown"
+        messages = obj.get("messages")
+        if not messages:
+            messages = bridge.frames_to_messages(obj["frames"])
         records.append({
             "id": obj["id"],
             "frames": obj["frames"],
             "domain": domain,
-            "messages": obj.get("messages"),
+            "messages": messages,
         })
     return records
 
@@ -44,13 +47,6 @@ def _is_valid(frames: list[dict]) -> tuple[bool, str]:
         traj = Trajectory(frames)
     except Exception as e:
         return False, f"construction error: {e}"
-    rendered = render(traj.to_frames())
-    try:
-        reparsed = parse(rendered)
-    except Exception as e:
-        return False, f"re-parse error: {e}"
-    if len(reparsed) != len(traj):
-        return False, f"frame count changed on round-trip ({len(traj)} -> {len(reparsed)})"
     violations = validate(traj.to_frames())
     if violations:
         return False, f"validation: {violations[0]}"
@@ -135,15 +131,13 @@ def push_to_hub(
     train: list[dict],
     eval_set: list[dict],
     repo_id: str,
-    *,
-    private: bool = False,
 ) -> None:
     ds = DatasetDict({
         "train": Dataset.from_list([_to_hf_record(r) for r in train]),
         "eval": Dataset.from_list([_to_hf_record(r) for r in eval_set]),
     })
-    print(f"\nuploading to {repo_id} (private={private})...")
-    ds.push_to_hub(repo_id, private=private)
+    print(f"\nuploading to {repo_id}...")
+    ds.push_to_hub(repo_id)
     print("done.")
 
 
@@ -153,7 +147,6 @@ def run_clean_and_push(
     *,
     eval_frac: float = 0.05,
     split_seed: int = 42,
-    private: bool = False,
 ) -> None:
     path = Path(input_path)
     print(f"loading {path}...")
@@ -185,4 +178,4 @@ def run_clean_and_push(
     print(f"  train: {len(train)}, eval: {len(eval_set)}")
 
     print("\npushing to huggingface...")
-    push_to_hub(train, eval_set, repo_id, private=private)
+    push_to_hub(train, eval_set, repo_id)

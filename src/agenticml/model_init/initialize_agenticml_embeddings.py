@@ -1,12 +1,18 @@
-"""initialize telos reserved-token embeddings from semantically related tokens."""
+"""initialize agenticml reserved-token embeddings from semantically related tokens."""
 
 from __future__ import annotations
+
+from pathlib import Path
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-# map each telos marker to seed token strings to average.
-TELOS_SEED_TOKENS: dict[str, list[str]] = {
+from agenticml.agentic_template import bake_agentic_template
+from agenticml.constants import AGENTICML_TOKEN_MAP
+from agenticml.tokenizer_helpers import require_single_token_id
+
+# map each agenticml marker to seed token strings to average.
+AGENTICML_SEED_TOKENS: dict[str, list[str]] = {
     "<|goal|>": ["goal", "objective", "purpose", "aim"],
     "<|mission|>": ["mission", "task", "instruction", "assignment", "problem"],
     "<|obs|>": ["observation", "context", "environment", "situation"],
@@ -20,19 +26,8 @@ TELOS_SEED_TOKENS: dict[str, list[str]] = {
     "<|reward|>": ["reward", "score", "bonus", "credit"],
 }
 
-# telos marker -> reserved-token slot index in llama-3.1 vocabulary.
-TELOS_RESERVED_SLOT: dict[str, int] = {
-    "<|goal|>": 0,
-    "<|mission|>": 1,
-    "<|obs|>": 2,
-    "<|belief|>": 3,
-    "<|plan|>": 4,
-    "<|think|>": 5,
-    "<|action|>": 6,
-    "<|end|>": 7,
-    "<|result|>": 8,
-    "<|feedback|>": 9,
-    "<|reward|>": 10,
+AGENTICML_MARKER_SLOT: dict[str, int] = {
+    frame_type.value: slot for frame_type, slot in AGENTICML_TOKEN_MAP
 }
 
 
@@ -52,7 +47,7 @@ def _seed_token_ids(tokenizer, words: list[str]) -> list[int]:
     return out
 
 
-def initialize_telos_embeddings(model, tokenizer) -> None:
+def initialize_agenticml_embeddings(model, tokenizer) -> None:
     """in-place modification of embed_tokens and lm_head rows."""
     if model.config.tie_word_embeddings:
         raise RuntimeError(
@@ -62,16 +57,16 @@ def initialize_telos_embeddings(model, tokenizer) -> None:
 
     embed = model.get_input_embeddings().weight
     lm_head = model.get_output_embeddings().weight
-    reserved_slot_base = tokenizer.convert_tokens_to_ids("<|reserved_special_token_0|>")
+    reserved_slot_base = require_single_token_id(tokenizer, "<|reserved_special_token_0|>")
 
     print(f"embed_tokens device: {embed.device}, dtype: {embed.dtype}")
     print(f"lm_head device:      {lm_head.device}, dtype: {lm_head.dtype}")
     print(f"reserved_slot_0 base id: {reserved_slot_base}")
 
-    for marker, seeds in TELOS_SEED_TOKENS.items():
-        slot = TELOS_RESERVED_SLOT[marker]
+    for marker, seeds in AGENTICML_SEED_TOKENS.items():
+        slot = AGENTICML_MARKER_SLOT[marker]
         reserved_name = f"<|reserved_special_token_{slot}|>"
-        target_id = tokenizer.convert_tokens_to_ids(reserved_name)
+        target_id = require_single_token_id(tokenizer, reserved_name)
         print(f"\n{marker} -> {reserved_name} (id={target_id})")
 
         seed_ids = _seed_token_ids(tokenizer, seeds)
@@ -90,11 +85,11 @@ def initialize_telos_embeddings(model, tokenizer) -> None:
         print(f"  lm_head norm: {new_norm_head:.4f}")
 
 
-def run_initialize_telos_embeddings(
+def run_initialize_agenticml_embeddings(
     base_model_id: str,
     *,
+    output_dir: str | Path,
     repo_id: str | None = None,
-    private: bool = False,
 ) -> None:
     # tokenizer only: vocab ids for reserved slots and seed words (vocab is unchanged).
     print(f"loading tokenizer: {base_model_id}")
@@ -108,16 +103,24 @@ def run_initialize_telos_embeddings(
         device_map="auto",
     )
 
-    print("\ninitializing telos marker embeddings...")
-    initialize_telos_embeddings(model, tokenizer)
+    print("\ninitializing agenticml marker embeddings...")
+    initialize_agenticml_embeddings(model, tokenizer)
+
+    print("\nattaching agenticml template to tokenizer...")
+    bake_agentic_template(tokenizer)
+
+    out = Path(output_dir)
+    print(f"\nsaving to {out}")
+    model.save_pretrained(out)
+    tokenizer.save_pretrained(out)
 
     if not repo_id:
         print("done (no --repo-id; skipped hub push).")
         return
 
     print(f"\npushing to huggingface hub: {repo_id}")
-    commit_message = f"telos embedding init from base {base_model_id}"
-    model.push_to_hub(repo_id, commit_message=commit_message, private=private)
-    tokenizer.push_to_hub(repo_id, commit_message=commit_message, private=private)
+    commit_message = f"agenticml embedding init from base {base_model_id}"
+    model.push_to_hub(repo_id, commit_message=commit_message)  # type: ignore[call-arg]
+    tokenizer.push_to_hub(repo_id, commit_message=commit_message)  # type: ignore[call-arg]
     print("pushed.")
     print("done.")

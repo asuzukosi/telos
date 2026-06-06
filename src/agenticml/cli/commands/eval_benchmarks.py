@@ -4,13 +4,10 @@ import argparse
 import json
 from pathlib import Path
 
-from telos.evaluation.benchmarks.run import SUITES, run_suite
-from telos.evaluation.harness.load import AdapterMode
+from agenticml.evaluation.benchmarks.run import SUITES, run_suite
 
 
 def _validate(p: argparse.ArgumentParser, args: argparse.Namespace) -> None:
-    if args.adapter_mode == AdapterMode.PEFT and not args.adapter_id:
-        p.error(f"--adapter-mode={AdapterMode.PEFT.value!r} requires --adapter-id")
     if args.suite in ("bfcl", "swe"):
         if args.score_only and args.no_score:
             p.error(f"{args.suite}: cannot use --score-only and --no-score together")
@@ -28,10 +25,8 @@ def _validate(p: argparse.ArgumentParser, args: argparse.Namespace) -> None:
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description="run benchmark suites")
     p.add_argument("--suite", required=True, choices=list(SUITES))
-    p.add_argument("--format", required=True, choices=["telos", "chatml"])
-    p.add_argument("--model", required=True)
-    p.add_argument("--adapter-mode", type=AdapterMode, default=AdapterMode.MERGED, choices=list(AdapterMode))
-    p.add_argument("--adapter-id", default=None)
+    p.add_argument("--format", required=True, choices=["agenticml", "chatml"])
+    p.add_argument("--model", required=True, help="merged hf checkpoint id or path")
     p.add_argument(
         "--output-dir",
         type=Path,
@@ -74,8 +69,6 @@ def main(argv: list[str] | None = None) -> None:
         "output_dir": args.output_dir,
         "num_examples": args.num_examples,
         "sample_seed": args.sample_seed,
-        "adapter_mode": args.adapter_mode.value,
-        "adapter_id": args.adapter_id,
         "max_new_tokens": args.max_new_tokens,
         "max_iterations": args.max_iterations,
         "inject_retry_failure": args.inject_retry_failure,

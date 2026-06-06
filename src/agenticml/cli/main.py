@@ -3,31 +3,25 @@ from __future__ import annotations
 import sys
 from collections.abc import Callable
 
-from telos.cli.commands import (
+from agenticml.cli.commands import (
     data_clean_push,
     data_synthetic_gen,
-    data_telos_to_chatml,
     eval_aggregate_results,
     eval_benchmarks,
     eval_run_all,
-    initialize_chatml_embeddings,
-    initialize_telos_embeddings,
-    verify_telos_embeddings,
-    train_chatml_lora,
-    train_telos_lora,
+    init_embeddings,
+    train_on_format,
+    verify_embeddings,
 )
 
 COMMANDS: dict[str, Callable[[list[str] | None], None]] = {
-    "train-telos-lora": train_telos_lora.main,
-    "train-chatml-lora": train_chatml_lora.main,
+    "train-on-format": train_on_format.main,
     "eval-benchmarks": eval_benchmarks.main,
     "eval-run-all": eval_run_all.main,
     "eval-aggregate-results": eval_aggregate_results.main,
-    "init-telos-embeddings": initialize_telos_embeddings.main,
-    "verify-telos-embeddings": verify_telos_embeddings.main,
-    "init-chatml-embeddings": initialize_chatml_embeddings.main,
+    "init-embeddings": init_embeddings.main,
+    "verify-embeddings": verify_embeddings.main,
     "data-clean-push": data_clean_push.main,
-    "data-telos-to-chatml": data_telos_to_chatml.main,
     "data-synthetic-gen": data_synthetic_gen.main,
 }
 
@@ -35,7 +29,7 @@ COMMANDS: dict[str, Callable[[list[str] | None], None]] = {
 def main(argv: list[str] | None = None) -> None:
     argv = sys.argv[1:] if argv is None else argv
     if not argv or argv[0] in ("-h", "--help"):
-        print("usage: telos <command> [args...]")
+        print("usage: agenticml <command> [args...]")
         print("commands:", ", ".join(sorted(COMMANDS)))
         return
     name, rest = argv[0], argv[1:]
@@ -44,3 +38,7 @@ def main(argv: list[str] | None = None) -> None:
         print("commands:", ", ".join(sorted(COMMANDS)))
         sys.exit(1)
     COMMANDS[name](rest)
+
+
+if __name__ == "__main__":
+    main()

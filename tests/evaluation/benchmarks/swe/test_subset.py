@@ -1,6 +1,6 @@
 import pytest
 
-from telos.evaluation.benchmarks.swe.subset import (
+from agenticml.evaluation.benchmarks.swe.subset import (
     SUBSET_IDS,
     SUBSET_SOURCE,
     load_subset_ids,

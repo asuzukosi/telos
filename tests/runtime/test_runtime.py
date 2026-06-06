@@ -1,39 +1,12 @@
 import pytest
-from telos.constants import FrameType
-from telos.runtime import RunResult, Tool, ToolError, ToolRegistry, run
-from telos.trajectory import Trajectory
+from agenticml.constants import FrameType
+from agenticml.runtime import Tool, ToolError, ToolRegistry, run
+from agenticml.trajectory import Trajectory
 
 
-class FakeTokenizer:
-    end_id = 999_999
-
-    def encode(self, text: str) -> list[int]:
-        return [ord(c) for c in text]
-
-    def decode(self, ids: list[int]) -> str:
-        out = []
-        for i in ids:
-            if i == self.end_id:
-                out.append("<|end|>")
-            else:
-                out.append(chr(i))
-        return "".join(out)
-
-class ScriptedGenerator:
-    """a generator that returns a pre-set text response."""
-    def __init__(self, responses: list[str]):
-        self.responses = list(responses)
-        self.call_count = 0
- 
-    def __call__(self, input_ids, stop_token_id, max_new_tokens):
-        if not self.responses:
-            raise AssertionError("ScriptedGenerator exhausted")
-        text = self.responses.pop(0)
-        self.call_count += 1
-        ids = [ord(c) for c in text] + [stop_token_id]
-        if len(ids) > max_new_tokens:
-            ids = ids[:max_new_tokens]
-        return ids
+from tests.fake_tokenizer import FakeTokenizer
+from tests.fixtures.generators import HfScriptedGenerator
+from tests.wire_fixtures import W_ACTION, W_BELIEF, W_END
  
 def _trivial_schema(name, **props):
     return {
@@ -96,8 +69,8 @@ def test_run_terminal_answer():
     reg = ToolRegistry()
     # No non-terminal tools needed; the model goes straight to answer.
  
-    gen = ScriptedGenerator([
-        '<|action|>{"tool":"answer","text":"42"}',
+    gen = HfScriptedGenerator([
+        f'{W_ACTION}{{"tool":"answer","text":"42"}}',
     ])
  
     initial = Trajectory([
@@ -113,8 +86,8 @@ def test_run_terminal_answer():
  
 def test_run_terminal_fail():
     reg = ToolRegistry()
-    gen = ScriptedGenerator([
-        '<|action|>{"tool":"fail","reason":"cannot answer"}',
+    gen = HfScriptedGenerator([
+        f'{W_ACTION}{{"tool":"fail","reason":"cannot answer"}}',
     ])
     initial = Trajectory([
         {"type": "goal", "content": "g"},
@@ -135,9 +108,9 @@ def test_run_executes_tool_then_answers():
         _trivial_schema("get_temp", city=""),
     ))
  
-    gen = ScriptedGenerator([
-        '<|action|>{"tool":"get_temp","city":"Paris"}',
-        '<|belief|>It is 18C in Paris.<|action|>{"tool":"answer","text":"18C"}',
+    gen = HfScriptedGenerator([
+        f'{W_ACTION}{{"tool":"get_temp","city":"Paris"}}',
+        f'{W_BELIEF}It is 18C in Paris.{W_ACTION}{{"tool":"answer","text":"18C"}}',
     ])
  
     initial = Trajectory([
@@ -145,7 +118,6 @@ def test_run_executes_tool_then_answers():
         {"type": "mission", "content": "weather in Paris"},
     ])
     result = run(initial, reg, tokenizer=FakeTokenizer(), generate=gen)
-    print(result.to_dict())
     assert result.stopped_on == "terminal_action"
     assert result.final_answer == "18C"
     assert result.iterations == 2
@@ -161,7 +133,7 @@ def test_run_executes_tool_then_answers():
  
  
 def test_run_handles_tool_error():
-    """when a tool raises ToolError, the runtime emits ok=0 and lets the model react."""
+    """when a tool raises ToolError, the runtime puts the error in result value."""
     reg = ToolRegistry()
  
     def broken(path):
@@ -169,9 +141,9 @@ def test_run_handles_tool_error():
  
     reg.register(Tool("read_file", broken, _trivial_schema("read_file", path="")))
  
-    gen = ScriptedGenerator([
-        '<|action|>{"tool":"read_file","path":"/nope"}',
-        '<|belief|>File missing.<|action|>{"tool":"answer","text":"file not found"}',
+    gen = HfScriptedGenerator([
+        f'{W_ACTION}{{"tool":"read_file","path":"/nope"}}',
+        f'{W_BELIEF}File missing.{W_ACTION}{{"tool":"answer","text":"file not found"}}',
     ])
  
     initial = Trajectory([
@@ -181,15 +153,14 @@ def test_run_handles_tool_error():
     result = run(initial, reg, tokenizer=FakeTokenizer(), generate=gen)
  
     assert result.stopped_on == "terminal_action"
-    # the result frame should have ok=0.
     error_result = None
     for f in result.trajectory:
         if f.type is FrameType.RESULT and isinstance(f.content, dict):
-            if f.content.get("ok") == 0:
+            if f.content.get("tool") == "read_file":
                 error_result = f
                 break
     assert error_result is not None
-    assert "no such file" in error_result.content["value"]
+    assert "no such file" in str(error_result.content.get("value"))
 
 
 def test_run_stops_at_max_iterations():
@@ -199,10 +170,10 @@ def test_run_stops_at_max_iterations():
  
     # Generator always returns the same non-terminal action.
     class InfiniteLoop:
-        end_id_marker = "<|end|>"
- 
+        end_id_marker = W_END
+
         def __call__(self, input_ids, stop_token_id, max_new_tokens):
-            text = '<|action|>{"tool":"loop"}'
+            text = f'{W_ACTION}{{"tool":"loop"}}'
             ids = [ord(c) for c in text] + [stop_token_id]
             return ids
  
@@ -223,7 +194,7 @@ def test_run_stops_at_max_iterations():
  
 def test_run_stops_on_parse_error():
     reg = ToolRegistry()
-    gen = ScriptedGenerator([
+    gen = HfScriptedGenerator([
         "not a valid frame at all",
     ])
     initial = Trajectory([
@@ -239,8 +210,8 @@ def test_run_stops_on_parse_error():
 def test_run_stops_on_no_action():
     """If the model emits only belief/think and no action, run stops."""
     reg = ToolRegistry()
-    gen = ScriptedGenerator([
-        "<|belief|>I have no idea what to do.",
+    gen = HfScriptedGenerator([
+        f"{W_BELIEF}I have no idea what to do.",
     ])
     initial = Trajectory([
         {"type": "goal", "content": "g"},
@@ -262,9 +233,9 @@ def test_run_executes_batched_actions_in_one_step():
  
     reg.register(Tool("echo", echo, _trivial_schema("echo", value="")))
  
-    gen = ScriptedGenerator([
-        '<|action|>{"tool":"echo","value":"a"}<|action|>{"tool":"echo","value":"b"}',
-        '<|action|>{"tool":"answer","text":"done"}',
+    gen = HfScriptedGenerator([
+        f'{W_ACTION}{{"tool":"echo","value":"a"}}{W_ACTION}{{"tool":"echo","value":"b"}}',
+        f'{W_ACTION}{{"tool":"answer","text":"done"}}',
     ])
  
     initial = Trajectory([
@@ -279,8 +250,8 @@ def test_run_executes_batched_actions_in_one_step():
 def test_run_result_to_dict_is_serializable():
     import json as _json
     reg = ToolRegistry()
-    gen = ScriptedGenerator([
-        '<|action|>{"tool":"answer","text":"ok"}',
+    gen = HfScriptedGenerator([
+        f'{W_ACTION}{{"tool":"answer","text":"ok"}}',
     ])
     initial = Trajectory([
         {"type": "goal", "content": "g"},

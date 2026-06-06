@@ -6,8 +6,8 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from telos.evaluation.benchmarks.swe.io import write_preds
-from telos.evaluation.benchmarks.swe.score import rows_to_task_results, score
+from agenticml.evaluation.benchmarks.swe.io import write_preds
+from agenticml.evaluation.benchmarks.swe.score import rows_to_task_results, score
 
 
 def _row(
@@ -39,7 +39,7 @@ def test_score_writes_summary_without_grader(tmp_path: Path):
     rows = [_row(), _row(instance_id="sympy__sympy-12454", patch="")]
     suite_score = score("org/model", rows, score_dir=tmp_path, run_grader=False)
     assert suite_score.primary is None
-    summary = json.loads((tmp_path / "org_model" / "telos_subset_summary.json").read_text())
+    summary = json.loads((tmp_path / "org_model" / "agenticml_subset_summary.json").read_text())
     assert summary["model_id"] == "org/model"
     assert (tmp_path / "org_model" / "preds.json").is_file()
 
@@ -51,13 +51,13 @@ def test_score_with_mock_grader_report(tmp_path: Path):
         "resolved_instances": 1,
         "resolved_ids": ["django__django-11099"],
     }
-    report_path = tmp_path / "org_model.telos-swe.json"
+    report_path = tmp_path / "org_model.agenticml-swe.json"
 
     def _fake_grader(*_args, **_kwargs):
         report_path.write_text(json.dumps(report) + "\n")
         return report_path
 
-    with patch("telos.evaluation.benchmarks.swe.score.run_swebench_grader", side_effect=_fake_grader):
+    with patch("agenticml.evaluation.benchmarks.swe.score.run_swebench_grader", side_effect=_fake_grader):
         suite_score = score("org/model", rows, score_dir=tmp_path)
 
     assert suite_score.primary == 0.5

@@ -1,13 +1,13 @@
 import pytest
 
-from telos.evaluation.benchmarks.bfcl.subset import (
+from agenticml.evaluation.benchmarks.bfcl.subset import (
     SUBSET_IDS,
     SUBSET_SOURCE,
     ensure_bfcl_on_path,
     load_subset,
     load_subset_id_map,
 )
-from telos.evaluation.benchmarks.common import repo_root
+from agenticml.evaluation.benchmarks.common import repo_root
 
 
 @pytest.fixture(scope="module")

@@ -1,17 +1,19 @@
-"""verify telos reserved-token rows match seed-word mean pooling (read-only)."""
+"""verify agenticml reserved-token rows match seed-word mean pooling (read-only)."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from telos.model_init.initialize_telos_embeddings import (
-    TELOS_RESERVED_SLOT,
-    TELOS_SEED_TOKENS,
+from agenticml.model_init.initialize_agenticml_embeddings import (
+    AGENTICML_MARKER_SLOT,
+    AGENTICML_SEED_TOKENS,
     _seed_token_ids,
 )
+from agenticml.tokenizer_helpers import require_single_token_id
 
 
 @dataclass
@@ -28,7 +30,15 @@ class MarkerEmbeddingReport:
     lm_head_max_abs_err: float
 
 
-def verify_telos_embedding_init(
+def _model_embedding_weights(model: Any) -> tuple[torch.Tensor, torch.Tensor]:
+    embed = model.get_input_embeddings().weight
+    out_emb = model.get_output_embeddings()
+    if out_emb is None:
+        raise RuntimeError("model has no output embeddings")
+    return embed, out_emb.weight
+
+
+def verify_agenticml_embedding_init(
     model,
     tokenizer,
     *,
@@ -37,15 +47,14 @@ def verify_telos_embedding_init(
     max_norm_ratio: float = 3.0,
 ) -> tuple[list[MarkerEmbeddingReport], list[str]]:
     """check reserved rows equal mean of seed rows."""
-    embed = model.get_input_embeddings().weight
-    lm_head = model.get_output_embeddings().weight
+    embed, lm_head = _model_embedding_weights(model)
     reports: list[MarkerEmbeddingReport] = []
     errors: list[str] = []
 
-    for marker, seeds in TELOS_SEED_TOKENS.items():
-        slot = TELOS_RESERVED_SLOT[marker]
+    for marker, seeds in AGENTICML_SEED_TOKENS.items():
+        slot = AGENTICML_MARKER_SLOT[marker]
         reserved_name = f"<|reserved_special_token_{slot}|>"
-        target_id = tokenizer.convert_tokens_to_ids(reserved_name)
+        target_id = require_single_token_id(tokenizer, reserved_name)
         seed_ids = _seed_token_ids(tokenizer, seeds)
 
         if len(seed_ids) < 2:
@@ -124,7 +133,7 @@ def print_verification_report(reports: list[MarkerEmbeddingReport], errors: list
         print("\nverification passed (all markers match seed means, norms ok)")
 
 
-def run_verify_telos_embeddings(model_id: str) -> None:
+def run_verify_agenticml_embeddings(model_id: str) -> None:
     print(f"loading tokenizer: {model_id}")
     tokenizer = AutoTokenizer.from_pretrained(model_id)
 
@@ -135,12 +144,11 @@ def run_verify_telos_embeddings(model_id: str) -> None:
         device_map="auto",
     )
 
-    embed = model.get_input_embeddings().weight
-    lm_head = model.get_output_embeddings().weight
+    embed, lm_head = _model_embedding_weights(model)
     print(f"embed_tokens device: {embed.device}, dtype: {embed.dtype}")
     print(f"lm_head device:      {lm_head.device}, dtype: {lm_head.dtype}")
 
-    reports, errors = verify_telos_embedding_init(model, tokenizer)
+    reports, errors = verify_agenticml_embedding_init(model, tokenizer)
     print_verification_report(reports, errors)
     if errors:
-        raise RuntimeError(f"telos embedding verification failed ({len(errors)} issues)")
+        raise RuntimeError(f"agenticml embedding verification failed ({len(errors)} issues)")

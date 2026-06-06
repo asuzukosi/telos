@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from telos.evaluation.benchmarks.common import repo_root
+from agenticml.evaluation.benchmarks.common import repo_root
 
 MINISWE_ROOT_REL = Path("third_party/mini-swe-agent")
 MINISWE_SRC_REL = MINISWE_ROOT_REL / "src"
@@ -78,7 +78,7 @@ def ensure_miniswe_on_path() -> Path:
 
 
 def format_command_output(output: dict[str, Any]) -> str:
-    """render mini-swe env output as telos result text (aligned with swebench.yaml observation template)."""
+    """render mini-swe env output as agenticml result text (aligned with swebench.yaml observation template)."""
     exc = (output.get("exception_info") or "").strip()
     rc = output.get("returncode", -1)
     text = output.get("output") or ""

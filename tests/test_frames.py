@@ -1,20 +1,14 @@
 import pytest
-from telos.constants import END_MARKER, FrameType
-from telos.validators import validate
-from telos.frames import (
-    PayloadKind,
-    TELOS_MARKERS,
-    TelosOwnershipError,
-    TelosParseError,
+from agenticml.constants import FrameType
+from agenticml.frames import (
+    AgenticMLOwnershipError,
+    AgenticMLParseError,
     action,
     belief,
     goal,
-    mission,
     reward,
     result,
     parse,
-    render,
-    render_frame,
 )
 
 
@@ -30,60 +24,12 @@ def test_owner_property():
     assert goal("x").owner == "runtime"
     assert belief("x").owner == "model"
     assert action({"t": "x"}).owner == "model"
-    assert result({"ok": 1}).owner == "runtime"
-
-
-def test_payload_kind_property():
-    assert goal("x").kind == PayloadKind.PROSE
-    assert action({"t": "x"}).kind == PayloadKind.JSON
-    assert reward(1.0).kind == PayloadKind.NUMBER
+    assert result({"tool": "bash", "value": "out"}).owner == "runtime"
 
 
 def test_frametype_string_equivalence():
     assert FrameType.GOAL == "<|goal|>"
     assert "<|goal|>" == FrameType.GOAL
-
-
-def test_render_prose_frame():
-    assert render_frame(goal("Hello world")) == "<|goal|>Hello world"
-
-
-def test_render_json_frame_is_compact():
-    rendered = render_frame(action({"tool": "list_dir", "path": "/tmp"}))
-    assert rendered == '<|action|>{"tool":"list_dir","path":"/tmp"}'
-
-
-def test_render_number_frame_integer():
-    assert render_frame(reward(1)) == "<|reward|>1"
-    assert render_frame(reward(0)) == "<|reward|>0"
-    assert render_frame(reward(-1)) == "<|reward|>-1"
-
-
-def test_render_number_frame_float():
-    assert render_frame(reward(0.5)) == "<|reward|>0.5"
-
-
-def test_render_trajectory_inserts_end_marker_after_model_segments():
-    frames = [
-        goal("You are an assistant."),
-        mission("What is 2+2?"),
-        action({"tool": "answer", "text": "4"}),
-    ]
-    out = render(frames)
-    assert "<|goal|>You are an assistant." in out
-    assert "<|mission|>What is 2+2?" in out
-    assert '<|action|>{"tool":"answer","text":"4"}' in out
-    assert out.endswith(END_MARKER)
-
-
-def test_render_no_double_separator_when_content_ends_in_newline():
-    frames = [
-        goal("ends with newline\n"),
-        mission("next frame"),
-    ]
-    out = render(frames)
-    assert "\n\n<|mission|>" not in out
-    assert "\n<|mission|>" in out
 
 
 def test_parse_single_prose_frame():
@@ -95,7 +41,7 @@ def test_parse_single_prose_frame():
 
 
 def test_parse_multiple_frames():
-    text = "<|goal|>be helpful\n<|mission|>find the answer"
+    text = "<|goal|>be helpful<|mission|>find the answer"
     frames = parse(text)
     assert len(frames) == 2
     assert frames[0].type is FrameType.GOAL
@@ -104,12 +50,13 @@ def test_parse_multiple_frames():
     assert frames[1].content == "find the answer"
 
 
-def test_parse_action_json_frame_skips_end_marker():
+def test_parse_action_json_frame_includes_end_marker():
     text = '<|action|>{"tool":"read_file","path":"main.py"}<|end|>'
     frames = parse(text)
-    assert len(frames) == 1
+    assert len(frames) == 2
     assert frames[0].type is FrameType.ACTION
     assert frames[0].content == {"tool": "read_file", "path": "main.py"}
+    assert frames[1].type is FrameType.END
 
 
 def test_parse_reward_frame():
@@ -123,47 +70,17 @@ def test_parse_negative_reward():
     assert frames[0].content == -1.5
 
 
-def test_parse_only_end_marker_yields_no_frames():
+def test_parse_only_end_marker_yields_end_frame():
     frames = parse("<|end|>")
-    assert frames == []
-
-
-def test_render_inserts_end_marker_between_action_and_result_not_a_frame():
-    frames = [
-        goal("g"),
-        mission("m"),
-        action({"tool": "list_dir", "path": "/"}),
-        result({"ok": 1, "value": []}),
-    ]
-    wire = render(frames)
-    assert END_MARKER in wire
-    assert wire.index("<|action|>") < wire.index(END_MARKER) < wire.index("<|result|>")
-    parsed = parse(wire)
-    assert len(parsed) == len(frames)
-    assert validate(parsed) == []
-
-
-def test_round_trip_full_trajectory():
-    original = [
-        goal("You are a file assistant."),
-        mission("Find the largest file."),
-        action({"tool": "list_dir", "path": "/tmp"}),
-        result({"ok": 1, "value": ["a.txt", "b.bin"]}),
-        belief("Two files in /tmp; sizes unknown."),
-        action({"tool": "answer", "text": "done"}),
-    ]
-    rendered = render(original)
-    parsed = parse(rendered)
-    assert len(parsed) == len(original)
-    for a, b in zip(original, parsed):
-        assert a.type is b.type
-        assert a.content == b.content
+    assert len(frames) == 1
+    assert frames[0].type is FrameType.END
+    assert frames[0].content is None
 
 
 def test_malformed_json_captured_in_error():
     text = '<|action|>{"tool":bad json}<|end|>'
     frames = parse(text)
-    assert len(frames) == 1
+    assert len(frames) == 2
     assert frames[0].type is FrameType.ACTION
     assert frames[0].content is None
     assert frames[0].error is not None
@@ -177,7 +94,7 @@ def test_malformed_reward_captured_in_error():
 
 
 def test_parse_rejects_garbage_before_first_marker():
-    with pytest.raises(TelosParseError):
+    with pytest.raises(AgenticMLParseError):
         parse("not a frame <|goal|>hi")
 
 
@@ -187,19 +104,39 @@ def test_parse_empty_string_returns_no_frames():
 
 
 def test_strict_mode_rejects_runtime_frame():
-    text = '<|result|>{"ok":1,"value":1}'
+    text = '<|result|>{"tool":"bash","value":1}'
     frames = parse(text)
     assert len(frames) == 1
-    with pytest.raises(TelosOwnershipError, match="runtime-owned"):
+    with pytest.raises(AgenticMLOwnershipError, match="runtime-owned"):
         parse(text, strict=True)
 
 
 def test_strict_mode_accepts_pure_model_output():
-    text = '<|belief|>I see three files.<|action|>{"tool":"answer","text":"ok"}<|end|>'
+    text = (
+        '<|belief|>I see three files.'
+        '<|action|>{"tool":"answer","text":"ok"}'
+        "<|end|>"
+    )
     frames = parse(text, strict=True)
-    assert len(frames) == 2
-    assert [f.type for f in frames] == [FrameType.BELIEF, FrameType.ACTION]
+    assert len(frames) == 3
+    assert [f.type for f in frames] == [FrameType.BELIEF, FrameType.ACTION, FrameType.END]
 
 
-def test_telos_markers_count():
-    assert len(TELOS_MARKERS) == 11
+def test_reserved_to_markers_round_trip():
+    from agenticml.agentic_template import parse_reserved_wire, reserved_to_markers
+    from agenticml.constants import FRAME_WIRE_MARKERS, WIRE_END_MARKER
+
+    wire = (
+        f"{FRAME_WIRE_MARKERS[FrameType.GOAL]}hi"
+        f'{FRAME_WIRE_MARKERS[FrameType.ACTION]}{{"tool":"answer","text":"ok"}}'
+        f"{WIRE_END_MARKER}"
+    )
+    marker_wire = reserved_to_markers(wire)
+    assert marker_wire == (
+        '<|goal|>hi<|action|>{"tool":"answer","text":"ok"}<|end|>'
+    )
+    parsed = parse_reserved_wire(wire)
+    assert len(parsed) == 3
+    assert parsed[0].type is FrameType.GOAL
+    assert parsed[1].type is FrameType.ACTION
+    assert parsed[2].type is FrameType.END

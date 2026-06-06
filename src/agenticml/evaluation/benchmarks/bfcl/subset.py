@@ -7,10 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from telos.evaluation.benchmarks.common import repo_root
+from agenticml.evaluation.benchmarks.common import repo_root
 
 BFCL_ROOT_REL = Path("third_party/gorilla/berkeley-function-call-leaderboard")
-SUBSET_SOURCE = "telos.evaluation.benchmarks.bfcl.subset:SUBSET_IDS"
+SUBSET_SOURCE = "agenticml.evaluation.benchmarks.bfcl.subset:SUBSET_IDS"
 
 # pinned bfcl v4 subset (45 cases, seed 42); excludes irrelevance/relevance
 SUBSET_IDS: dict[str, list[str]] = {
@@ -75,7 +75,7 @@ SUBSET_IDS: dict[str, list[str]] = {
     ],
 }
 
-# telos is tool-first; bfcl irrelevance/relevance expect no tool call
+# agenticml is tool-first; bfcl irrelevance/relevance expect no tool call
 EXCLUDED_CATEGORIES = frozenset({"irrelevance", "relevance", "live_irrelevance"})
 
 

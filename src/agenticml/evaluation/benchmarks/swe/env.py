@@ -5,8 +5,8 @@ from __future__ import annotations
 import subprocess
 from typing import Any
 
-from telos.evaluation.benchmarks.swe.common import ensure_miniswe_on_path
-from telos.evaluation.benchmarks.swe.registry import BashEnvironment
+from agenticml.evaluation.benchmarks.swe.common import ensure_miniswe_on_path
+from agenticml.evaluation.benchmarks.swe.registry import BashEnvironment
 
 DEFAULT_MAX_ITERATIONS = 250
 REPEAT_COMMAND_LIMIT = 3
