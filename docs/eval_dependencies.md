@@ -14,6 +14,7 @@ git submodule update --init --recursive
 # staged bfcl install (recommended). `pip install -e ".[eval-benchmarks]"` alone often
 # fails: pyproject pins bfcl_eval with a relative file:// URL that pip rejects.
 pip install -e third_party/gorilla/berkeley-function-call-leaderboard
+pip install soundfile   # bfcl scoring: qwen-agent imports this at load time
 pip install swebench   # optional; SWE grading only
 ```
 
@@ -77,7 +78,7 @@ agenticml eval-aggregate-results          # write docs/benchmark_results.md
 
 Default models: `kosiasuzu/agenticml-llama3.1-8b-lora-merged` (agenticml format), `kosiasuzu/chatml-llama3.1-8b-lora-merged` (chatml). Override with `--agenticml-model` / `--chatml-model`.
 
-BFCL subset IDs: `SUBSET_IDS` in [`bfcl/subset.py`](../src/agenticml/evaluation/benchmarks/bfcl/subset.py) (45 cases, seed 42; excludes irrelevance — misaligned with tool-first AgenticML). Package: `agenticml.evaluation.benchmarks.bfcl` (`subset`, `common`, `agenticml`, `chatml`, `score`, `suite`). Orchestrator: `BFCLSuite` / `run_suite("bfcl", ...)` or CLI:
+BFCL subset IDs: `SUBSET_IDS` in [`bfcl/subset.py`](../src/agenticml/evaluation/benchmarks/bfcl/subset.py) (45 cases, seed 42; excludes irrelevance — misaligned with tool-first AgenticML). Long multi-turn vehicle/travel cases (e.g. `multi_turn_base_67`) are swapped for shorter 2–3 turn examples in the pinned subset. Package: `agenticml.evaluation.benchmarks.bfcl` (`subset`, `common`, `agenticml`, `chatml`, `score`, `suite`). Orchestrator: `BFCLSuite` / `run_suite("bfcl", ...)` or CLI:
 
 ```bash
 agenticml eval-benchmarks --suite bfcl --format agenticml --model <hf_id> --num-examples 5

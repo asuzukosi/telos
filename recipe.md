@@ -228,6 +228,7 @@ git submodule update --init --recursive
 # bfcl_eval file:// dependency; install bfcl separately instead
 pip install -e ".[eval]"
 pip install -e third_party/gorilla/berkeley-function-call-leaderboard
+pip install soundfile   # bfcl scoring (qwen-agent dependency)
 pip install swebench   # optional; skip on hosts without Docker (no SWE grading)
 # if toolbench fails with ModuleNotFoundError: termcolor, re-run pip install -e ".[eval]"
 ```

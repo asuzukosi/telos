@@ -12,7 +12,9 @@ from agenticml.evaluation.benchmarks.common import repo_root
 BFCL_ROOT_REL = Path("third_party/gorilla/berkeley-function-call-leaderboard")
 SUBSET_SOURCE = "agenticml.evaluation.benchmarks.bfcl.subset:SUBSET_IDS"
 
-# pinned bfcl v4 subset (45 cases, seed 42); excludes irrelevance/relevance
+# pinned bfcl v4 subset (45 cases, seed 42); excludes irrelevance/relevance.
+# multi_turn_base: 8 fast cases (2–3 turns, filesystem/trading/message). slow
+# vehicle/travel sagas (67, 88, 97, 154) and 24 replaced with shorter ids.
 SUBSET_IDS: dict[str, list[str]] = {
     "simple_python": [
         "simple_python_114",
@@ -64,14 +66,14 @@ SUBSET_IDS: dict[str, list[str]] = {
         "live_multiple_865-182-2",
     ],
     "multi_turn_base": [
-        "multi_turn_base_154",
+        "multi_turn_base_7",
+        "multi_turn_base_13",
         "multi_turn_base_23",
-        "multi_turn_base_24",
         "multi_turn_base_26",
-        "multi_turn_base_67",
-        "multi_turn_base_88",
+        "multi_turn_base_29",
         "multi_turn_base_91",
-        "multi_turn_base_97",
+        "multi_turn_base_100",
+        "multi_turn_base_104",
     ],
 }
 
@@ -105,9 +107,11 @@ def ensure_bfcl_scoring() -> None:
     try:
         from bfcl_eval.eval_checker.eval_runner import evaluate_task  # noqa: F401
     except ImportError as e:
+        hint = "  pip install soundfile" if "soundfile" in str(e) else (
+            "  pip install -e third_party/gorilla/berkeley-function-call-leaderboard"
+        )
         raise ImportError(
-            "bfcl scoring requires gorilla deps (e.g. overrides). run:\n"
-            "  pip install -e third_party/gorilla/berkeley-function-call-leaderboard\n"
+            f"bfcl scoring import failed ({e}). try:\n{hint}\n"
             "see docs/eval_dependencies.md for full eval setup"
         ) from e
 

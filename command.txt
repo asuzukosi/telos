@@ -105,6 +105,7 @@ git submodule update --init --recursive
 
 # staged bfcl install (pip install -e ".[eval-benchmarks]" often fails on file:// bfcl_eval)
 pip install -e third_party/gorilla/berkeley-function-call-leaderboard
+pip install soundfile   # bfcl scoring (qwen-agent dependency)
 pip install swebench   # optional; SWE grading only
 
 python -c "import bfcl_eval; print('bfcl ok')"

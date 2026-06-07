@@ -61,7 +61,7 @@ def test_chatml_skips_duplicate_tool_block_in_prompt():
     pytest.importorskip("tree_sitter")
     from agenticml.evaluation.benchmarks.bfcl.subset import load_subset
 
-    entry = next(e for e in load_subset().entries if e["id"] == "multi_turn_base_67")
+    entry = next(e for e in load_subset().entries if e["id"] == "multi_turn_base_26")
     msgs = entry_turn_messages(entry, 0)
     dup = bridge.inject_tool_schemas(list(msgs), entry_tool_schemas(entry))
     assert "available tools:" not in msgs[0]["content"]
