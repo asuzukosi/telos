@@ -53,6 +53,34 @@ class FakeChatMLTokenizer(PreTrainedTokenizerBase):
             return [ord(c) for c in text]
         return text
 
+    def encode(
+        self,
+        text: str | list[str] | list[int],
+        text_pair: str | list[str] | list[int] | None = None,
+        add_special_tokens: bool = True,
+        padding: bool | str = False,
+        truncation: bool | str | None = None,
+        max_length: int | None = None,
+        stride: int = 0,
+        padding_side: str | None = None,
+        return_tensors: str | None = None,
+        **kwargs: Any,
+    ) -> list[int]:
+        _ = (
+            text_pair,
+            add_special_tokens,
+            padding,
+            truncation,
+            max_length,
+            stride,
+            padding_side,
+            return_tensors,
+            kwargs,
+        )
+        if not isinstance(text, str):
+            raise TypeError("fake chatml tokenizer encode expects a string")
+        return [ord(c) for c in text]
+
     def decode(
         self,
         token_ids: Any,

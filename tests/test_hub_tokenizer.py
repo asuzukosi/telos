@@ -11,6 +11,7 @@ from agenticml.agentic_template import (
     render_trajectory,
 )
 from agenticml.constants import END_MARKER_TOKEN_ID
+from agenticml.tokenizer_helpers import chat_template_ids
 from agenticml.frames import action, end, goal, mission
 from agenticml.trajectory import Trajectory
 
@@ -43,9 +44,9 @@ def test_hub_tokenizer_round_trip(repo_id: str):
     ])
     wire = render_trajectory(tokenizer, traj)
     assert wire
-    ids = tokenizer.apply_chat_template(
+    ids = chat_template_ids(
+        tokenizer,
         traj.to_dict(),
-        tokenize=True,
         add_generation_prompt=False,
         add_special_tokens=False,
     )

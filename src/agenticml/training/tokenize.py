@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import json
-from typing import List
 
 from transformers import PreTrainedTokenizerBase
 
 from agenticml.constants import MODEL_MARKER_TOKEN_IDS, RUNTIME_MARKER_TOKEN_IDS
+from agenticml.tokenizer_helpers import chat_template_ids
 from agenticml.training.labels import mask_labels
 from agenticml.training.types import TrainingPromptField
 from agenticml.trajectory import Trajectory
@@ -31,15 +31,7 @@ def parse_training_prompt(
     return items
 
 
-def normalize_token_ids(ids) -> list[int] | None:
-    if isinstance(ids, list) and ids and isinstance(ids[0], list):
-        ids = ids[0]
-    if not isinstance(ids, list) or not ids or not isinstance(ids[0], int):
-        return None
-    return ids
-
-
-def truncate(ids: List[int], labels: List[int], max_length: int):
+def truncate(ids: list[int], labels: list[int], max_length: int):
     if len(ids) > max_length:
         ids = ids[:max_length]
         labels = labels[:max_length]
@@ -58,19 +50,15 @@ def tokenize_data_for_training(
     if prompt is None:
         return dict(_EMPTY_BATCH)
 
-    encode_kwargs: dict = {
-        "tokenize": True,
-        "add_generation_prompt": False,
-    }
+    template_kwargs: dict = {"add_generation_prompt": False}
     if prompt_field is TrainingPromptField.FRAMES:
-        encode_kwargs["add_special_tokens"] = False
+        template_kwargs["add_special_tokens"] = False
     try:
-        ids = tokenizer.apply_chat_template(prompt, **encode_kwargs)
+        ids = chat_template_ids(tokenizer, prompt, **template_kwargs)
     except Exception:
         return dict(_EMPTY_BATCH)
 
-    ids = normalize_token_ids(ids)
-    if ids is None:
+    if not ids:
         return dict(_EMPTY_BATCH)
 
     labels = mask_labels(

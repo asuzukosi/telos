@@ -12,9 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Optional, Union
-
 from transformers import PreTrainedTokenizerBase
-
 from agenticml.agentic_template import parse_reserved_wire
 from agenticml.tokenizer_helpers import chat_template_ids
 from agenticml.constants import END_MARKER_TOKEN_ID, FrameType, WIRE_END_MARKER

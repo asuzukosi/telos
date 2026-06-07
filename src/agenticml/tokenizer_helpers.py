@@ -13,18 +13,18 @@ def chat_template_ids(
 ) -> list[int]:
     """tokenize a conversation via apply_chat_template.
 
-    in: messages/frames list + template kwargs (e.g. add_generation_prompt).
-    out: input_ids for the model prompt.
+    render the template to wire text, then encode. some tokenizer builds
+    truncate apply_chat_template(..., tokenize=True); render-then-encode avoids that.
     """
-    out = tokenizer.apply_chat_template(conversation, tokenize=True, **kwargs)
-    if not isinstance(out, list):
-        raise TypeError("apply_chat_template with tokenize=True must return list[int]")
-    ids: list[int] = []
-    for item in out:
-        if not isinstance(item, int):
-            raise TypeError("apply_chat_template with tokenize=True must return list[int]")
-        ids.append(item)
-    return ids
+    add_special_tokens = kwargs.pop("add_special_tokens", True)
+    wire = tokenizer.apply_chat_template(
+        conversation,
+        tokenize=False,
+        **kwargs,
+    )
+    if not isinstance(wire, str):
+        raise TypeError("apply_chat_template with tokenize=False must return str")
+    return tokenizer.encode(wire, add_special_tokens=add_special_tokens)
 
 
 def single_token_id(tokenizer: PreTrainedTokenizerBase, token: str) -> int | None:

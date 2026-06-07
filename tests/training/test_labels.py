@@ -10,4 +10,4 @@ def test_mask_agenticml_runtime_labels():
     runtime_ids = {10}
     ids = [10, 1, 2, 20, 3]
     labels = mask_agenticml_runtime_labels(ids, agent_ids, runtime_ids)
-    assert labels == [-100, -100, -100, 20, -100]
+    assert labels == [-100, -100, -100, 20, 3]

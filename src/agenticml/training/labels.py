@@ -15,7 +15,10 @@ def mask_agenticml_runtime_labels(
     labels = list(input_ids)
     in_model_block = False
     for i, tok in enumerate(input_ids):
-        in_model_block = (tok in agent_marker_ids) and not (tok in runtime_marker_ids)
+        if tok in runtime_marker_ids:
+            in_model_block = False
+        elif tok in agent_marker_ids:
+            in_model_block = True
         if not in_model_block:
             labels[i] = -100
     return labels
@@ -79,19 +82,7 @@ def mask_chatml_labels(
     prompt: list[dict],
     tokenizer: PreTrainedTokenizerBase,
 ) -> list[int]:
-    try:
-        out = tokenizer.apply_chat_template(
-            prompt,
-            tokenize=True,
-            add_generation_prompt=False,
-            return_dict=True,
-            return_assistant_tokens_mask=True,
-        )
-        assistant_mask = out.get("assistant_tokens_mask") if isinstance(out, dict) else None
-        if assistant_mask is not None and len(assistant_mask) == len(ids):
-            return [tok if m else -100 for tok, m in zip(ids, assistant_mask)]
-    except Exception:
-        pass
+    _ = prompt
     return mask_assistant_only(ids, tokenizer)
 
 

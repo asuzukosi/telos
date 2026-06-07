@@ -5,6 +5,7 @@ from __future__ import annotations
 from agenticml.constants import END_MARKER_TOKEN_ID
 from agenticml.tokenizer_helpers import (
     agenticml_stop_token_ids,
+    chat_template_ids,
     chatml_stop_token_ids,
     eos_token_id,
     pad_token_id,
@@ -37,6 +38,15 @@ def test_single_token_id_reads_stub_method():
 def test_require_single_token_id_raises_for_missing():
     tok = _StubTokenizer()
     assert require_single_token_id(tok, "<|reserved_special_token_0|>") == 20
+
+
+def test_chat_template_ids_render_then_encode():
+    tok = FakeTokenizer()
+    frames = [{"type": "goal", "content": "hi"}]
+    ids = chat_template_ids(tok, frames, add_generation_prompt=False, add_special_tokens=False)
+    wire = tok.apply_chat_template(frames, tokenize=False, add_generation_prompt=False)
+    assert ids == tok.encode(wire, add_special_tokens=False)
+    assert len(ids) > 1
 
 
 def test_pad_and_stop_ids():
