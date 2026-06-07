@@ -55,10 +55,11 @@ def ensure_swebench_importable() -> None:
             pass
     raise ImportError(
         "swebench is required for SWE grading. install eval dependencies:\n"
-        "  pip install -e \".[eval-benchmarks]\"\n"
+        "  pip install swebench\n"
         "or install the submodule package:\n"
         "  git submodule update --init third_party/SWE-bench\n"
-        "  pip install -e third_party/SWE-bench"
+        "  pip install -e third_party/SWE-bench\n"
+        "see docs/eval_dependencies.md"
     )
 
 

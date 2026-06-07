@@ -42,6 +42,18 @@ def test_frames_to_messages_tool_loop(b: FormatBridge):
     assert messages[3]["role"] == "tool"
 
 
+def test_frames_to_messages_skips_malformed_action(b: FormatBridge):
+    frames = [
+        {"type": "goal", "content": "g"},
+        {"type": "mission", "content": "m"},
+        {"type": "action", "content": None},
+        {"type": "action", "content": {"tool": "answer", "text": "ok"}},
+    ]
+    messages = b.frames_to_messages(frames)
+    assert messages[-1]["role"] == "assistant"
+    assert messages[-1]["content"] == "ok"
+
+
 def test_messages_to_frames_round_trip(b: FormatBridge):
     frames = [
         {"type": "goal", "content": "system goal"},

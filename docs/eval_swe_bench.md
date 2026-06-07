@@ -48,9 +48,14 @@ Fix by aligning **driver** and **PyTorch CUDA build** (reinstall torch for your 
 ## dependencies
 
 ```bash
-pip install -e ".[eval-benchmarks]"
+pip install --upgrade pip
+pip install -e ".[eval]"
 git submodule update --init --recursive
+pip install -e third_party/gorilla/berkeley-function-call-leaderboard
+pip install swebench
 ```
+
+See [`eval_dependencies.md`](eval_dependencies.md) for ToolBench data download (`hf download ... --repo-type dataset`).
 
 | component | path / package |
 |-----------|----------------|

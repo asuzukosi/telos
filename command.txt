@@ -98,24 +98,26 @@ agenticml train-on-format --format chatml \
 pytest tests/evaluation/benchmarks/ -q --ignore=tests/evaluation/benchmarks/swe/test_smoke_pipeline.py
 
 # from repo root; see docs/eval_dependencies.md
+pip install --upgrade pip
 pip install -e ".[eval]"
 
 git submodule update --init --recursive
 
-pip install -e ".[eval-benchmarks]"
+# staged bfcl install (pip install -e ".[eval-benchmarks]" often fails on file:// bfcl_eval)
+pip install -e third_party/gorilla/berkeley-function-call-leaderboard
+pip install swebench   # optional; SWE grading only
 
-# toolbench data: unzip into third_party/ToolBench/data/ (test_instruction, toolenv, tool_response_cache, ...)
-# hf mirror (preferred); requires huggingface-cli login if the dataset is gated
+python -c "import bfcl_eval; print('bfcl ok')"
+
+# toolbench data: extract into third_party/ToolBench/data/ (test_instruction, toolenv, tool_response_cache, ...)
+# must use --repo-type dataset (otherwise HF returns "Repository not found")
 cd third_party/ToolBench
-huggingface-cli download nullwwg/toolbench-data data.zip --local-dir .
-unzip -o data.zip
+hf download nullwwg/toolbench-data data.zip --repo-type dataset --local-dir .
+python -c "import zipfile; zipfile.ZipFile('data.zip').extractall('.')"
+ls data/test_instruction/G1_instruction.json
 cd ../..
 
-# toolbench data (upstream google drive alternative)
-# cd third_party/ToolBench
-# wget --no-check-certificate 'https://drive.google.com/uc?export=download&id=1XFjDxVZdUY7TXYF2yvzx3pJlS2fy78jk&confirm=yes' -O data.zip
-# unzip -o data.zip
-# cd ../..
+# own mirror (optional): hf upload kosiasuzu/toolbench-data data.zip data.zip --repo-type dataset
 
 
 # --- format validity eval: agenticml ---

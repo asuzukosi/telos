@@ -7,15 +7,48 @@ Full pipeline from init through eval (with per-step smoke tests): [`recipe.md`](
 ## python
 
 ```bash
+pip install --upgrade pip
 pip install -e ".[eval]"
 git submodule update --init --recursive
-pip install -e ".[eval-benchmarks]"
+
+# staged bfcl install (recommended). `pip install -e ".[eval-benchmarks]"` alone often
+# fails: pyproject pins bfcl_eval with a relative file:// URL that pip rejects.
+pip install -e third_party/gorilla/berkeley-function-call-leaderboard
+pip install swebench   # optional; SWE grading only
 ```
 
 | extra | packages |
 |-------|----------|
-| `eval` | torch, datasets, tqdm |
-| `eval-benchmarks` | `agenticml[eval]`, [swebench](https://github.com/princeton-nlp/SWE-bench), editable [`bfcl_eval`](../third_party/gorilla/berkeley-function-call-leaderboard) (gorilla submodule) |
+| `eval` | torch, datasets, tqdm, termcolor (toolbench upstream) |
+| `eval-benchmarks` (metadata) | `agenticml[eval]`, [swebench](https://github.com/princeton-nlp/SWE-bench), editable [`bfcl_eval`](../third_party/gorilla/berkeley-function-call-leaderboard) — install bfcl via the staged command above |
+
+Verify:
+
+```bash
+python -c "import bfcl_eval; print('bfcl ok')"
+```
+
+## toolbench data (~2 GB)
+
+Eval needs the OpenBMB **on-disk tree** under `data/` (`test_instruction`, `test_query_ids`, `toolenv`, `tool_response_cache`). Not a generic HF parquet dataset.
+
+```bash
+cd third_party/ToolBench
+hf download nullwwg/toolbench-data data.zip --repo-type dataset --local-dir .
+python -c "import zipfile; zipfile.ZipFile('data.zip').extractall('.')"
+cd ../..
+```
+
+**Important:** pass `--repo-type dataset`. Without it, `hf download nullwwg/toolbench-data ...` searches for a *model* repo and fails with `Repository not found`.
+
+| source | status |
+|--------|--------|
+| [`nullwwg/toolbench-data`](https://huggingface.co/datasets/nullwwg/toolbench-data) | community mirror of OpenBMB `data.zip` (preferred) |
+| OpenBMB [Google Drive](https://github.com/OpenBMB/ToolBench) / Tsinghua Cloud | often dead (404); do not rely on upstream wget links |
+| `Maurus/ToolBench` on HF | wrong format (flat table; no `toolenv` / cache tree) |
+| your own Hub dataset | upload local `data.zip`, then `hf download <you>/toolbench-data data.zip --repo-type dataset` |
+
+Set `TOOLBENCH_DATA` to the ToolBench root if `data/` is not under `third_party/ToolBench`. On minimal hosts without `unzip`, use the `python -c "import zipfile; ..."` one-liner above.
 
 ## third_party (git submodules)
 
@@ -56,7 +89,7 @@ Format validity always uses `kosiasuzu/agenticml-agent-trajectory-dataset` / `ev
 
 Writes gorilla result files under `results/benchmarks/bfcl/`, scores via upstream `evaluate_task`, and a harness envelope at `results/benchmarks/bfcl/<format>/summary.json`. Re-score without inference: `--score-only`. Optional: `--inject-retry-failure`, `--no-score`.
 
-Scoring imports `bfcl_eval.eval_checker.eval_runner`, which loads gorilla’s full dependency set (`overrides`, `tree_sitter`, etc.). `.[eval-benchmarks]` installs the submodule package; `.[eval]` alone is not enough for BFCL.
+Scoring imports `bfcl_eval.eval_checker.eval_runner`, which loads gorilla’s full dependency set (`overrides`, `tree_sitter`, etc.). Install the gorilla submodule editable (see staged install above); `.[eval]` alone is not enough for BFCL.
 
 ToolBench subset: `SUBSET_IDS` in [`toolbench/subset.py`](../src/agenticml/evaluation/benchmarks/toolbench/subset.py) pins 10 `G1_instruction` query IDs. Loader: `agenticml.evaluation.benchmarks.toolbench.subset`. Data root: `TOOLBENCH_DATA` env or `third_party/ToolBench` (`data/test_instruction/G1_instruction.json`, `data/test_query_ids/G1_instruction.json`).
 
@@ -76,7 +109,7 @@ Related (reference only):
 
 - SWE-agent (reference): https://github.com/SWE-agent/SWE-agent
 
-If you already use `.[eval-benchmarks]`, you do not need a separate `PYTHONPATH` hack for gorilla. ToolBench imports resolve via `third_party/ToolBench` on `sys.path` (`ensure_toolbench_on_path`) and pyright/pytest `extraPaths`.
+After the editable `bfcl_eval` install, you do not need a separate `PYTHONPATH` hack for gorilla. ToolBench imports resolve via `third_party/ToolBench` on `sys.path` (`ensure_toolbench_on_path`) and pyright/pytest `extraPaths`.
 
 ## ops
 

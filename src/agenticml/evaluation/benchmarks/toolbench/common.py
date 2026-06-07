@@ -38,7 +38,8 @@ def ensure_toolenv(data_root: Path | None = None) -> Path:
     if not tools.is_dir():
         raise FileNotFoundError(
             f"toolbench toolenv not found at {tools}; "
-            "download ToolBench data.zip into TOOLBENCH_DATA or third_party/ToolBench"
+            "download OpenBMB data.zip (see docs/eval_dependencies.md): "
+            "hf download nullwwg/toolbench-data data.zip --repo-type dataset --local-dir third_party/ToolBench"
         )
     return root
 

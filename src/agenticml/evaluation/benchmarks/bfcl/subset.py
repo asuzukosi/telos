@@ -90,7 +90,8 @@ def ensure_bfcl_on_path() -> Path:
         import tree_sitter  # noqa: F401
     except ImportError as e:
         raise ImportError(
-            "bfcl needs tree_sitter. install with: pip install -e \".[eval-benchmarks]\""
+            "bfcl needs tree_sitter. install gorilla editable:\n"
+            "  pip install -e third_party/gorilla/berkeley-function-call-leaderboard"
         ) from e
     s = str(root)
     if s not in sys.path:
@@ -106,9 +107,8 @@ def ensure_bfcl_scoring() -> None:
     except ImportError as e:
         raise ImportError(
             "bfcl scoring requires gorilla deps (e.g. overrides). run:\n"
-            "  pip install -e \".[eval-benchmarks]\"\n"
-            "or:\n"
-            "  pip install -e third_party/gorilla/berkeley-function-call-leaderboard"
+            "  pip install -e third_party/gorilla/berkeley-function-call-leaderboard\n"
+            "see docs/eval_dependencies.md for full eval setup"
         ) from e
 
 

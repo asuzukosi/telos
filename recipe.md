@@ -30,6 +30,7 @@ pip install --upgrade pip
 pip install -e ".[dev,train,eval,data]"
 
 hf auth login          # needs meta-llama access for Llama 3.1
+export HF_TOKEN=...    # or add to ~/.bashrc; required for hub push + dataset downloads
 wandb login            # optional; training logs to wandb when configured
 
 pytest tests/test_frames.py tests/test_bridge.py tests/test_sdk.py -q
@@ -222,21 +223,47 @@ pytest tests/evaluation/benchmarks/ -q \
   --ignore=tests/evaluation/benchmarks/swe/test_smoke_pipeline.py
 
 git submodule update --init --recursive
-pip install -e ".[eval-benchmarks]"
+
+# staged install: pip install -e ".[eval-benchmarks]" often fails on the editable
+# bfcl_eval file:// dependency; install bfcl separately instead
+pip install -e ".[eval]"
+pip install -e third_party/gorilla/berkeley-function-call-leaderboard
+pip install swebench   # optional; skip on hosts without Docker (no SWE grading)
+# if toolbench fails with ModuleNotFoundError: termcolor, re-run pip install -e ".[eval]"
 ```
 
-ToolBench cached data (one-time):
+ToolBench cached data (one-time, ~2 GB):
 
 ```bash
 cd third_party/ToolBench
-hf download nullwwg/toolbench-data data.zip --local-dir .
-unzip -o data.zip
+
+# must pass --repo-type dataset; without it HF looks for a *model* repo and returns
+# "Repository not found". OpenBMB Google Drive / Tsinghua links are often dead (404).
+hf download nullwwg/toolbench-data data.zip --repo-type dataset --local-dir .
+
+# extract with python (many minimal images, e.g. RunPod, have no unzip package)
+python -c "import zipfile; zipfile.ZipFile('data.zip').extractall('.')"
+
 cd ../..
+
+# sanity check (needs test_instruction, toolenv, tool_response_cache under data/)
+ls data/test_instruction/G1_instruction.json
+ls data/toolenv/tools | head
 ```
+
+**Own mirror (optional):** if you already have `data.zip` locally, upload once and download on fresh pods:
+
+```bash
+hf upload kosiasuzu/toolbench-data data.zip data.zip --repo-type dataset
+hf download kosiasuzu/toolbench-data data.zip --repo-type dataset --local-dir third_party/ToolBench
+```
+
+Override data root with `export TOOLBENCH_DATA=/path/to/ToolBench` when unzipped elsewhere.
 
 **Check after setup:**
 
 ```bash
+python -c "import bfcl_eval; print('bfcl ok')"
 agenticml eval-run-all --dry-run   # lists 8 matrix cells, no gpu
 ```
 
@@ -335,9 +362,11 @@ hf upload kosiasuzu/chatml-llama3.1-8b-lora-merged \
 | Topic | Guidance |
 |--------|----------|
 | **Repo** | Clone `asuzukosi/agenticml` for code; Hub ids in commands point at `kosiasuzu/...` unless you re-init/train to your account |
-| **pip** | Run `pip install --upgrade pip` before editable install; older pip (24.x) fails on optional `file://` deps in metadata |
+| **pip** | Run `pip install --upgrade pip` before editable install; use staged eval install (see step 4), not `pip install -e ".[eval-benchmarks]"` alone |
+| **HF auth** | `export HF_TOKEN=...` or `hf auth login` before training hub push and ToolBench download |
 | **Submodules** | Required for BFCL / ToolBench / SWE eval, not for train-only |
-| **Disk** | ToolBench `data.zip` is large; ensure enough volume |
+| **ToolBench data** | `hf download nullwwg/toolbench-data ... --repo-type dataset` — **not** a model repo; extract with `python -c "import zipfile; ..."` if `unzip` is missing |
+| **Disk** | ToolBench `data.zip` is ~2 GB; ensure enough volume |
 | **SWE** | Needs Docker + first image pull can take 30+ min |
 | **Time order** | Setup → dataset (or verify Hub) → init (or verify) → train agenticml → train chatml → eval setup → smoke evals → full matrix |
 

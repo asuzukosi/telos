@@ -96,7 +96,7 @@ class FormatBridge:
                 pending_reasoning.append(str(c))
             elif t == "action":
                 if not isinstance(c, dict):
-                    raise ValueError(f"action frame content must be dict, got {type(c)!r}")
+                    continue  # skip malformed parse (e.g. non-strict eval runs)
                 tool = c.get("tool")
                 args = {k: v for k, v in c.items() if k != "tool"}
                 assistant_content = "\n".join(pending_reasoning) if pending_reasoning else ""
